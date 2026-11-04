@@ -3,7 +3,7 @@
    Changer VERSION à chaque mise en ligne pour que les téléphones prennent la mise à jour.
    ============================================= */
 
-const VERSION = 'terrain-0.1.0';
+const VERSION = 'terrain-0.1.1';
 const CACHE_APP = 'app-' + VERSION;
 const CACHE_EXTERNE = 'externe-v1';   // Leaflet + tuiles de carte déjà vues
 const MAX_TUILES = 600;
@@ -22,8 +22,13 @@ const FICHIERS_APP = [
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
 ];
 
+// Mise en cache fichier par fichier : un fichier manquant ne doit pas bloquer le hors connexion
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE_APP).then(c => c.addAll(FICHIERS_APP)).then(() => self.skipWaiting()));
+  e.waitUntil(
+    caches.open(CACHE_APP)
+      .then(c => Promise.allSettled(FICHIERS_APP.map(f => c.add(f))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (e) => {
