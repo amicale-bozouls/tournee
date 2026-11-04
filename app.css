@@ -1,0 +1,226 @@
+/* =============================================
+   TOURNÉE CALENDRIERS — APP TERRAIN
+   Thème clair à fort contraste (lisible en plein soleil)
+   ============================================= */
+
+:root {
+  --fond: #f3f5f8;
+  --carte: #ffffff;
+  --texte: #14181f;
+  --texte-2: #5b6573;
+  --bordure: #d9dee6;
+  --primaire: #1f5fbf;
+  --primaire-texte: #ffffff;
+  --danger: #c62828;
+
+  --st-a_visiter: #8a94a3;
+  --st-don: #1e8e3e;
+  --st-absent: #d48a00;
+  --st-repasser: #7b3fe4;
+  --st-boite_lettres: #0b7fa8;
+  --st-refuse: #c62828;
+  --st-autre: #4a5566;
+
+  --rayon: 14px;
+  --ombre: 0 1px 3px rgba(20, 24, 31, .08), 0 4px 14px rgba(20, 24, 31, .06);
+  --bas-securite: env(safe-area-inset-bottom, 0px);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--fond);
+  color: var(--texte);
+  font-size: 16px;
+  -webkit-tap-highlight-color: transparent;
+}
+[hidden] { display: none !important; }
+button { font: inherit; color: inherit; cursor: pointer; }
+input, select, textarea { font: inherit; color: var(--texte); }
+
+/* ---------- Boutons ---------- */
+.btn {
+  border: 1px solid var(--bordure);
+  background: var(--carte);
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-weight: 600;
+  min-height: 48px;
+}
+.btn-primaire { background: var(--primaire); border-color: var(--primaire); color: var(--primaire-texte); }
+.btn-discret { background: transparent; border-color: transparent; color: var(--primaire); }
+.btn-danger { color: var(--danger); border-color: #f0c4c4; }
+.btn-large { width: 100%; font-size: 17px; }
+.btn-rond {
+  width: 44px; height: 44px; border-radius: 50%;
+  border: none; background: rgba(255, 255, 255, .18); color: #fff; font-size: 20px;
+  flex-shrink: 0;
+}
+
+/* ---------- Accueil ---------- */
+.accueil {
+  max-width: 440px; margin: 0 auto; padding: 48px 20px;
+  display: flex; flex-direction: column; gap: 16px; text-align: center;
+}
+.accueil-icone { font-size: 64px; }
+.accueil h1 { font-size: 26px; }
+.accueil p { color: var(--texte-2); }
+.aide { text-align: left; background: var(--carte); border-radius: var(--rayon); padding: 14px 16px; box-shadow: var(--ombre); }
+.aide summary { font-weight: 600; cursor: pointer; }
+.aide ol { margin: 10px 0 10px 20px; display: grid; gap: 6px; }
+
+/* ---------- En-tête tournée ---------- */
+.entete {
+  background: var(--primaire); color: #fff;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 14px;
+  position: sticky; top: 0; z-index: 20;
+}
+.entete-ligne { display: flex; align-items: center; gap: 12px; }
+.entete-titre { flex: 1; min-width: 0; }
+.entete-titre h1 { font-size: 19px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.entete-titre p { font-size: 13px; opacity: .85; }
+.progression { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 13px; }
+.progression-barre { flex: 1; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, .25); overflow: hidden; }
+#progression-remplie { height: 100%; width: 0; background: #7ee2a0; transition: width .3s; }
+.chiffres { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; text-align: center; }
+.chiffres div { background: rgba(255, 255, 255, .12); border-radius: 10px; padding: 6px 2px; }
+.chiffres b { display: block; font-size: 17px; }
+.chiffres span { font-size: 11px; opacity: .85; }
+
+/* ---------- Barre d'outils ---------- */
+.barre-outils {
+  padding: 10px 12px 6px; background: var(--fond);
+  position: sticky; top: var(--hauteur-entete, 150px); z-index: 15;
+}
+#recherche {
+  width: 100%; padding: 12px 14px; border-radius: 12px;
+  border: 1px solid var(--bordure); background: var(--carte); font-size: 16px;
+}
+.filtres { display: flex; gap: 6px; margin-top: 8px; overflow-x: auto; scrollbar-width: none; }
+.filtre {
+  border: 1px solid var(--bordure); background: var(--carte);
+  border-radius: 20px; padding: 7px 14px; font-size: 14px; white-space: nowrap;
+}
+.filtre.actif { background: var(--texte); color: #fff; border-color: var(--texte); }
+
+/* ---------- Liste ---------- */
+.liste { padding: 4px 12px calc(160px + var(--bas-securite)); display: flex; flex-direction: column; gap: 8px; }
+.groupe-lieu { font-weight: 700; font-size: 15px; margin: 12px 4px 0; color: var(--primaire); }
+.groupe-voie { font-weight: 600; font-size: 13px; margin: 4px 4px 0; color: var(--texte-2); text-transform: uppercase; letter-spacing: .03em; }
+.vide { text-align: center; color: var(--texte-2); padding: 40px 10px; }
+
+.maison {
+  background: var(--carte); border-radius: var(--rayon); box-shadow: var(--ombre);
+  border-left: 6px solid var(--st-a_visiter); padding: 12px 12px 10px;
+}
+.maison-haut { display: flex; gap: 10px; align-items: flex-start; }
+.maison-infos { flex: 1; min-width: 0; }
+.maison-adresse { font-weight: 700; font-size: 16px; }
+.maison-nom { color: var(--texte-2); font-size: 14px; margin-top: 2px; }
+.maison-n1 { color: var(--texte-2); font-size: 12px; margin-top: 4px; }
+.maison-remarque { font-size: 13px; color: var(--texte-2); margin-top: 6px; font-style: italic; }
+.maison-etat { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; background: #eceff3; color: var(--texte-2); margin-left: 6px; vertical-align: middle; }
+.maison-nouvelle { background: #fff3cd; color: #7a5a00; }
+.maison-statut { text-align: right; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.maison-statut b { display: block; font-size: 18px; }
+.btn-detail { border: none; background: #eef1f5; border-radius: 10px; width: 40px; height: 40px; font-size: 18px; flex-shrink: 0; }
+
+.actions-rapides { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
+.action {
+  border: 1px solid var(--bordure); background: #fff; border-radius: 10px;
+  min-height: 44px; font-size: 13px; font-weight: 600; padding: 4px 2px;
+}
+.action.actif { color: #fff; border-color: transparent; }
+
+/* Couleurs par statut (bordure de carte + bouton actif) */
+.maison[data-statut="don"] { border-left-color: var(--st-don); }
+.maison[data-statut="absent"] { border-left-color: var(--st-absent); }
+.maison[data-statut="repasser"] { border-left-color: var(--st-repasser); }
+.maison[data-statut="boite_lettres"] { border-left-color: var(--st-boite_lettres); }
+.maison[data-statut="refuse"] { border-left-color: var(--st-refuse); }
+.maison[data-statut="autre"] { border-left-color: var(--st-autre); }
+.maison[data-statut="don"] .maison-statut { color: var(--st-don); }
+.maison[data-statut="absent"] .maison-statut { color: var(--st-absent); }
+.maison[data-statut="repasser"] .maison-statut { color: var(--st-repasser); }
+.maison[data-statut="boite_lettres"] .maison-statut { color: var(--st-boite_lettres); }
+.maison[data-statut="refuse"] .maison-statut { color: var(--st-refuse); }
+.action.actif[data-statut="don"] { background: var(--st-don); }
+.action.actif[data-statut="absent"] { background: var(--st-absent); }
+.action.actif[data-statut="repasser"] { background: var(--st-repasser); }
+.action.actif[data-statut="boite_lettres"] { background: var(--st-boite_lettres); }
+.action.actif[data-statut="refuse"] { background: var(--st-refuse); }
+.maison.inactive { opacity: .6; }
+
+/* ---------- Carte ---------- */
+.vue-carte { position: fixed; left: 0; right: 0; top: var(--hauteur-entete, 150px); bottom: calc(64px + var(--bas-securite)); z-index: 10; }
+#carte { width: 100%; height: 100%; }
+.btn-carte-position { position: absolute; right: 14px; top: 14px; z-index: 500; background: var(--primaire); box-shadow: var(--ombre); }
+.carte-info { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--texte-2); background: var(--fond); z-index: 400; }
+.position-moi { width: 18px; height: 18px; border-radius: 50%; background: #1f5fbf; border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(31, 95, 191, .25); }
+.popup-carte b { display: block; margin-bottom: 2px; }
+.popup-carte button { margin-top: 8px; width: 100%; padding: 8px; border-radius: 8px; border: none; background: var(--primaire); color: #fff; font-weight: 600; }
+
+/* ---------- Barre du bas + FAB ---------- */
+.barre-bas {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+  display: grid; grid-template-columns: 1fr 1fr 1fr;
+  background: var(--carte); border-top: 1px solid var(--bordure);
+  padding-bottom: var(--bas-securite);
+}
+.onglet { border: none; background: none; height: 64px; font-size: 15px; font-weight: 600; color: var(--texte-2); position: relative; }
+.onglet.actif { color: var(--primaire); }
+.onglet-envoi { color: var(--primaire); }
+.badge-compteur {
+  display: inline-block; min-width: 20px; height: 20px; line-height: 20px; padding: 0 6px;
+  border-radius: 10px; background: var(--danger); color: #fff; font-size: 12px; margin-left: 2px;
+}
+.fab {
+  position: fixed; right: 16px; bottom: calc(80px + var(--bas-securite)); z-index: 31;
+  width: 60px; height: 60px; border-radius: 50%; border: none;
+  background: var(--primaire); color: #fff; font-size: 30px; box-shadow: 0 6px 18px rgba(31, 95, 191, .4);
+}
+
+/* ---------- Feuilles (bottom sheets) ---------- */
+.feuille-fond {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(10, 14, 20, .45);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.feuille {
+  width: 100%; max-width: 560px; max-height: 92vh; overflow-y: auto;
+  background: var(--carte); border-radius: 20px 20px 0 0;
+  padding: 18px 16px calc(16px + var(--bas-securite));
+  display: flex; flex-direction: column; gap: 12px;
+  animation: monter .18s ease-out;
+}
+@keyframes monter { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+.feuille h2 { font-size: 19px; }
+.rappel { color: var(--texte-2); font-size: 14px; }
+.champ { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--texte-2); font-weight: 600; }
+.champ input, .champ select, .champ textarea {
+  width: 100%; padding: 12px; font-size: 16px; font-weight: 400;
+  border: 1px solid var(--bordure); border-radius: 10px; background: #fff;
+}
+.champ textarea { resize: vertical; }
+#don-montant { font-size: 28px; text-align: center; font-weight: 700; }
+.grille-2 { display: grid; grid-template-columns: 1fr 2fr; gap: 10px; }
+.grille-egale { grid-template-columns: 1fr 1fr; }
+.raccourcis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.raccourcis button { min-height: 48px; border-radius: 10px; border: 1px solid var(--bordure); background: #fff; font-weight: 700; font-size: 16px; }
+.feuille-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
+.feuille-actions .btn { flex: 1; }
+.ligne-gps { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; color: var(--texte-2); }
+.proposition { background: #eef4ff; border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+.proposition button { margin-top: 6px; }
+.menu-liste { display: flex; flex-direction: column; gap: 10px; }
+.version { text-align: center; color: var(--texte-2); font-size: 12px; }
+
+/* ---------- Toast ---------- */
+.toast {
+  position: fixed; left: 50%; top: calc(14px + env(safe-area-inset-top, 0px)); transform: translateX(-50%) translateY(-20px);
+  background: var(--texte); color: #fff; padding: 12px 18px; border-radius: 12px;
+  font-size: 15px; opacity: 0; pointer-events: none; transition: all .2s; z-index: 200;
+  max-width: calc(100% - 32px); text-align: center;
+}
+.toast.visible { opacity: 1; transform: translateX(-50%); }

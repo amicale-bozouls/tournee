@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#1f5fbf" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Tournée" />
+  <title>Tournée Calendriers</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+
+<!-- ======= ÉCRAN D'ACCUEIL (aucune tournée chargée) ======= -->
+<section id="ecran-accueil" class="ecran" hidden>
+  <div class="accueil">
+    <div class="accueil-icone">📅</div>
+    <h1>Tournée Calendriers</h1>
+    <p>Ouvrez le fichier de tournée reçu par WhatsApp ou par mail.</p>
+    <button class="btn btn-primaire btn-large" data-action="ouvrir-fichier">📂 Ouvrir un fichier de tournée</button>
+    <button class="btn btn-discret" data-action="charger-demo">Essayer avec une tournée de démonstration</button>
+    <details class="aide">
+      <summary>Comment faire ?</summary>
+      <ol>
+        <li>Dans WhatsApp, appuyez sur le fichier reçu puis <b>Enregistrer</b> (ou <b>Partager → Enregistrer dans Fichiers</b> sur iPhone).</li>
+        <li>Revenez ici et appuyez sur <b>Ouvrir un fichier de tournée</b>.</li>
+        <li>Choisissez le fichier <code>tournee_….json</code>.</li>
+      </ol>
+      <p>Vos saisies restent sur ce téléphone, même sans réseau.</p>
+    </details>
+  </div>
+</section>
+
+<!-- ======= ÉCRAN TOURNÉE ======= -->
+<section id="ecran-tournee" class="ecran" hidden>
+  <header class="entete">
+    <div class="entete-ligne">
+      <div class="entete-titre">
+        <h1 id="titre-tournee">Tournée</h1>
+        <p id="sous-titre-tournee"></p>
+      </div>
+      <button class="btn-rond" data-action="ouvrir-menu" aria-label="Menu">☰</button>
+    </div>
+    <div class="progression">
+      <div class="progression-barre"><div id="progression-remplie"></div></div>
+      <span id="progression-texte">0 / 0</span>
+    </div>
+    <div class="chiffres">
+      <div><b id="chiffre-dons">0</b><span>dons</span></div>
+      <div><b id="chiffre-total">0 €</b><span>total</span></div>
+      <div><b id="chiffre-repasser">0</b><span>à repasser</span></div>
+      <div><b id="chiffre-reste">0</b><span>à visiter</span></div>
+    </div>
+  </header>
+
+  <nav class="barre-outils">
+    <input id="recherche" type="search" placeholder="🔍 Nom, rue, numéro…" autocomplete="off" />
+    <div class="filtres" role="tablist">
+      <button class="filtre actif" data-filtre="toutes">Toutes</button>
+      <button class="filtre" data-filtre="a_visiter">À visiter</button>
+      <button class="filtre" data-filtre="repasser">À repasser</button>
+      <button class="filtre" data-filtre="faites">Faites</button>
+    </div>
+  </nav>
+
+  <main id="vue-liste" class="liste"></main>
+
+  <div id="vue-carte" class="vue-carte" hidden>
+    <div id="carte"></div>
+    <button class="btn-rond btn-carte-position" data-action="me-localiser" aria-label="Ma position">📍</button>
+    <p id="carte-hors-ligne" class="carte-info" hidden>Carte indisponible sans réseau.</p>
+  </div>
+
+  <div class="barre-bas">
+    <button class="onglet actif" data-vue="liste">📋 Liste</button>
+    <button class="onglet" data-vue="carte">🗺️ Carte</button>
+    <button class="onglet onglet-envoi" data-action="envoyer-retour">📤 Envoyer <span id="badge-non-envoye" class="badge-compteur" hidden>0</span></button>
+  </div>
+
+  <button class="fab" data-action="nouvelle-maison" aria-label="Nouvelle maison">＋</button>
+</section>
+
+<!-- ======= FEUILLE : DON ======= -->
+<div id="feuille-don" class="feuille-fond" hidden>
+  <div class="feuille">
+    <h2 id="don-titre">Don</h2>
+    <p id="don-rappel" class="rappel"></p>
+    <label class="champ">
+      <span>Montant (€)</span>
+      <input id="don-montant" type="text" inputmode="decimal" autocomplete="off" placeholder="0" />
+    </label>
+    <div id="don-raccourcis" class="raccourcis"></div>
+    <div class="feuille-actions">
+      <button class="btn btn-discret" data-action="fermer-feuille">Annuler</button>
+      <button class="btn btn-primaire" data-action="valider-don">✓ Valider le don</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======= FEUILLE : FICHE MAISON (détail / nouvelle) ======= -->
+<div id="feuille-maison" class="feuille-fond" hidden>
+  <div class="feuille feuille-haute">
+    <h2 id="maison-titre">Maison</h2>
+    <p id="maison-historique" class="rappel"></p>
+
+    <div class="grille-2">
+      <label class="champ"><span>N°</span><input id="m-numero" type="text" autocomplete="off" /></label>
+      <label class="champ champ-large"><span>Rue / voie</span><input id="m-voie" type="text" list="liste-voies" autocomplete="off" /></label>
+    </div>
+    <label class="champ"><span>Lieu-dit</span><input id="m-lieu" type="text" list="liste-lieux" autocomplete="off" /></label>
+    <label class="champ"><span>Habitant</span><input id="m-nom" type="text" autocomplete="off" /></label>
+
+    <div class="grille-2 grille-egale">
+      <label class="champ">
+        <span>Passage</span>
+        <select id="m-statut"></select>
+      </label>
+      <label class="champ"><span>Don (€)</span><input id="m-don" type="text" inputmode="decimal" autocomplete="off" /></label>
+    </div>
+    <label class="champ">
+      <span>Maison</span>
+      <select id="m-etat"></select>
+    </label>
+    <label class="champ"><span>Remarque</span><textarea id="m-remarque" rows="2"></textarea></label>
+
+    <div class="ligne-gps">
+      <span id="m-gps-texte">Position : —</span>
+      <button class="btn btn-discret" data-action="capturer-gps">📍 Je suis devant</button>
+    </div>
+    <p id="m-adresse-proposee" class="proposition" hidden></p>
+
+    <datalist id="liste-voies"></datalist>
+    <datalist id="liste-lieux"></datalist>
+
+    <div class="feuille-actions">
+      <button class="btn btn-discret" data-action="fermer-feuille">Annuler</button>
+      <button class="btn btn-primaire" data-action="enregistrer-maison">💾 Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======= FEUILLE : MENU ======= -->
+<div id="feuille-menu" class="feuille-fond" hidden>
+  <div class="feuille">
+    <h2>Menu</h2>
+    <label class="champ">
+      <span>Mon prénom (pour les retours)</span>
+      <input id="benevole" type="text" autocomplete="given-name" />
+    </label>
+    <p id="menu-dernier-envoi" class="rappel"></p>
+    <div class="menu-liste">
+      <button class="btn btn-large" data-action="envoyer-retour">📤 Envoyer mon retour</button>
+      <button class="btn btn-large" data-action="ouvrir-fichier">📂 Ouvrir un autre fichier de tournée</button>
+      <button class="btn btn-large btn-danger" data-action="effacer-tournee">🗑 Effacer la tournée de ce téléphone</button>
+    </div>
+    <p class="version">Version <span id="version-app"></span></p>
+    <div class="feuille-actions">
+      <button class="btn btn-primaire" data-action="fermer-feuille">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<input id="fichier-tournee" type="file" hidden />
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "format": "tournee-bozouls",
+  "version": 1,
+  "exporteLe": "2026-11-04T18:00:00.000Z",
+  "_note": "Données entièrement fictives, pour tester l'application.",
+  "tournee": { "id": "demo-2026", "nom": "Démo — Secteur test", "annee": 2026, "responsable": "Responsable démo" },
+  "maisons": [
+    { "id": "d01", "commune": "Bozouls", "lieu": "Centre", "ordreLieu": 1, "numero": "1", "voie": "Rue des Tilleuls", "ordreRue": 1, "nom": "Famille Exemple", "etat": "habitee", "lat": 44.4721, "lng": 2.7195, "infos": "", "historique": [{ "annee": 2025, "statut": "don", "don": 15 }, { "annee": 2024, "statut": "don", "don": 10 }] },
+    { "id": "d02", "commune": "Bozouls", "lieu": "Centre", "ordreLieu": 1, "numero": "3", "voie": "Rue des Tilleuls", "ordreRue": 1, "nom": "M. Fictif", "etat": "habitee", "lat": 44.4723, "lng": 2.7199, "infos": "Sonner fort", "historique": [{ "annee": 2025, "statut": "absent", "don": 0 }, { "annee": 2024, "statut": "don", "don": 20 }] },
+    { "id": "d03", "commune": "Bozouls", "lieu": "Centre", "ordreLieu": 1, "numero": "5 bis", "voie": "Rue des Tilleuls", "ordreRue": 1, "nom": "Mme Test", "etat": "habitee", "lat": 44.4725, "lng": 2.7203, "infos": "", "historique": [{ "annee": 2025, "statut": "don", "don": 20 }] },
+    { "id": "d04", "commune": "Bozouls", "lieu": "Centre", "ordreLieu": 1, "numero": "7", "voie": "Rue des Tilleuls", "ordreRue": 1, "nom": "", "etat": "inhabitee", "lat": 44.4727, "lng": 2.7207, "infos": "Volets fermés depuis 2024", "historique": [] },
+    { "id": "d05", "commune": "Bozouls", "lieu": "Centre", "ordreLieu": 1, "numero": "2", "voie": "Place de la Fontaine", "ordreRue": 2, "nom": "Boulangerie Démo", "etat": "habitee", "lat": 44.4716, "lng": 2.7212, "infos": "Passer le matin", "historique": [{ "annee": 2025, "statut": "don", "don": 30 }, { "annee": 2024, "statut": "don", "don": 30 }] },
+    { "id": "d06", "commune": "Bozouls", "lieu": "Centre", "ordreLieu": 1, "numero": "4", "voie": "Place de la Fontaine", "ordreRue": 2, "nom": "Famille Modèle", "etat": "habitee", "lat": 44.4714, "lng": 2.7216, "infos": "", "historique": [{ "annee": 2025, "statut": "refuse", "don": 0 }] },
+    { "id": "d07", "commune": "Bozouls", "lieu": "Centre", "ordreLieu": 1, "numero": "6", "voie": "Place de la Fontaine", "ordreRue": 2, "nom": "M. et Mme Essai", "etat": "habitee", "lat": 44.4712, "lng": 2.7220, "infos": "", "historique": [{ "annee": 2025, "statut": "boite_lettres", "don": 5 }] },
+    { "id": "d08", "commune": "Bozouls", "lieu": "Le Hameau Démo", "ordreLieu": 2, "numero": "", "voie": "Chemin du Puech", "ordreRue": 1, "nom": "Ferme Exemple", "etat": "habitee", "lat": 44.4780, "lng": 2.7290, "infos": "Chien dans la cour", "historique": [{ "annee": 2025, "statut": "don", "don": 25 }, { "annee": 2024, "statut": "don", "don": 20 }] },
+    { "id": "d09", "commune": "Bozouls", "lieu": "Le Hameau Démo", "ordreLieu": 2, "numero": "", "voie": "Chemin du Puech", "ordreRue": 1, "nom": "Mme Prototype", "etat": "secondaire", "lat": 44.4785, "lng": 2.7298, "infos": "Présente l'été", "historique": [{ "annee": 2025, "statut": "autre", "don": 0 }] },
+    { "id": "d10", "commune": "Bozouls", "lieu": "Le Hameau Démo", "ordreLieu": 2, "numero": "12", "voie": "Route du Causse", "ordreRue": 2, "nom": "M. Brouillon", "etat": "habitee", "lat": 44.4792, "lng": 2.7310, "infos": "", "historique": [{ "annee": 2025, "statut": "don", "don": 10 }] },
+    { "id": "d11", "commune": "Bozouls", "lieu": "Le Hameau Démo", "ordreLieu": 2, "numero": "14", "voie": "Route du Causse", "ordreRue": 2, "nom": "Famille Maquette", "etat": "habitee", "lat": null, "lng": null, "infos": "Adresse non géolocalisée", "historique": [] },
+    { "id": "d12", "commune": "Bozouls", "lieu": "Le Hameau Démo", "ordreLieu": 2, "numero": "16", "voie": "Route du Causse", "ordreRue": 2, "nom": "M. Ébauche", "etat": "habitee", "lat": 44.4796, "lng": 2.7318, "infos": "", "historique": [{ "annee": 2025, "statut": "don", "don": 12.5 }] }
+  ]
+}

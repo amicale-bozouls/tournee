@@ -1,0 +1,15 @@
+# Ce dépôt est PUBLIC : il ne doit contenir que du code.
+# Aucune donnée réelle (noms, adresses, dons) ne doit être ajoutée ici.
+*.csv
+*.ods
+*.xls
+*.xlsx
+*.accdb
+*.mdb
+sauvegarde_*.json
+tournee_*.json
+retour_*.json
+Portables/
+donnees/
+# Seule exception : la démo fictive
+!terrain/demo/tournee_demo.json
