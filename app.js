@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.1.2';
+const APP_VERSION = '0.1.3';
 const CLE_STOCKAGE = 'tournee_terrain_v2';
 const CLE_BENEVOLE = 'tournee_terrain_benevole';
 const FORMAT_TOURNEE = 'tournee-bozouls';
@@ -222,21 +222,41 @@ function importerTournee(donnees) {
   return true;
 }
 
+function ouvrirTexteTournee(texte) {
+  try {
+    const donnees = JSON.parse(texte);
+    if (donnees && donnees.format === FORMAT_RETOUR) {
+      throw new Error('Ce fichier est un retour de tournée : il s\'ouvre sur le PC du responsable, pas ici.');
+    }
+    if (importerTournee(donnees)) {
+      afficher();
+      toast(`✅ Tournée « ${etat.tournee.nom} » chargée`);
+    }
+  } catch (e) {
+    alerte('❌ ' + (e instanceof SyntaxError ? 'Fichier illisible (ce n\'est pas un fichier de tournée).' : e.message));
+  }
+}
+
 function lireFichierChoisi(fichier) {
   const lecteur = new FileReader();
-  lecteur.onload = () => {
-    try {
-      const donnees = JSON.parse(lecteur.result);
-      if (importerTournee(donnees)) {
-        afficher();
-        toast(`✅ Tournée « ${etat.tournee.nom} » chargée`);
-      }
-    } catch (e) {
-      alerte('❌ ' + (e instanceof SyntaxError ? 'Fichier illisible (ce n\'est pas un fichier de tournée).' : e.message));
-    }
-  };
+  lecteur.onload = () => ouvrirTexteTournee(lecteur.result);
   lecteur.onerror = () => alerte('❌ Impossible de lire le fichier.');
   lecteur.readAsText(fichier, 'utf-8');
+}
+
+// Fichier reçu par « Partager → Tournée » (déposé par le service worker, voir sw.js)
+async function ouvrirFichierPartage() {
+  if (!new URLSearchParams(location.search).has('partage')) return;
+  history.replaceState(null, '', location.pathname);
+  try {
+    const cache = await caches.open('partage');
+    const rep = await cache.match('fichier-partage');
+    if (!rep) { alerte('❌ Le fichier partagé n\'a pas pu être récupéré. Réessayez, ou utilisez « Ouvrir un fichier de tournée ».'); return; }
+    await cache.delete('fichier-partage');
+    ouvrirTexteTournee(await rep.text());
+  } catch (e) {
+    alerte('❌ Fichier partagé illisible : ' + e.message);
+  }
 }
 
 async function chargerDemo() {
@@ -789,6 +809,7 @@ function init() {
   chargerEtat();
   initEvenements();
   afficher();
+  ouvrirFichierPartage();
 
   // Demander au navigateur de ne pas effacer nos données en cas de manque de place
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});

@@ -3,10 +3,12 @@
    Changer VERSION à chaque mise en ligne pour que les téléphones prennent la mise à jour.
    ============================================= */
 
-const VERSION = 'terrain-0.1.2';
+const VERSION = 'terrain-0.1.3';
 const CACHE_APP = 'app-' + VERSION;
 const CACHE_EXTERNE = 'externe-v1';   // Leaflet + tuiles de carte déjà vues
 const MAX_TUILES = 600;
+const CACHE_PARTAGE = 'partage';      // fichier reçu par « Partager → Tournée », lu puis effacé par l'app
+const CLE_PARTAGE = 'fichier-partage';
 
 const FICHIERS_APP = [
   './',
@@ -41,8 +43,14 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;
-  if (req.method !== 'GET') return;
   const url = new URL(req.url);
+
+  // Fichier partagé depuis WhatsApp / Mail (Android) : on le garde puis on ouvre l'app
+  if (req.method === 'POST' && url.pathname.endsWith('/partage')) {
+    e.respondWith(recevoirPartage(req));
+    return;
+  }
+  if (req.method !== 'GET') return;
 
   // API Adresse : toujours en direct (pas de cache, l'app gère l'absence de réseau)
   if (url.hostname === 'api-adresse.data.gouv.fr') return;
@@ -79,6 +87,20 @@ self.addEventListener('fetch', (e) => {
   // Autres ressources externes (Leaflet) : cache d'abord
   e.respondWith(caches.match(req).then(r => r || fetch(req)));
 });
+
+async function recevoirPartage(req) {
+  try {
+    const formulaire = await req.formData();
+    const fichier = formulaire.get('fichier');
+    if (fichier && typeof fichier.text === 'function') {
+      const cache = await caches.open(CACHE_PARTAGE);
+      await cache.put(CLE_PARTAGE, new Response(await fichier.text(), { headers: { 'X-Nom-Fichier': encodeURIComponent(fichier.name || '') } }));
+    }
+  } catch (err) {
+    console.warn('Partage illisible', err);
+  }
+  return Response.redirect('./?partage=1', 303);
+}
 
 async function limiterCache(cache) {
   const cles = await cache.keys();
