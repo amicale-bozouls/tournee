@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gestion des tournées</title>
+  <link rel="icon" href="../icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="gestion.css" />
+</head>
+<body>
+
+<!-- ======= DÉMARRAGE ======= -->
+<section id="ecran-demarrage" class="demarrage" hidden>
+  <div class="demarrage-boite">
+    <div class="demarrage-icone">📅</div>
+    <h1>Gestion des tournées de calendriers</h1>
+    <p class="discret">Les données restent sur ce PC, dans un fichier que vous choisissez.</p>
+    <button id="btn-reprendre" class="btn btn-primaire btn-large" data-action="reprendre-base" hidden>▶ Reprendre <span id="nom-base-precedente"></span></button>
+    <button class="btn btn-large" data-action="ouvrir-base">📂 Ouvrir un fichier de base</button>
+    <button class="btn btn-large" data-action="creer-base">✨ Créer une nouvelle base</button>
+    <button class="btn btn-large" data-action="importer-v1">📥 Importer une sauvegarde de l'ancienne application</button>
+    <p id="avertissement-navigateur" class="alerte" hidden>
+      Ce navigateur ne permet pas d'enregistrer dans un fichier. Utilisez <b>Chrome</b> ou <b>Edge</b> ;
+      sinon les données restent dans le navigateur (pensez à télécharger des copies).
+    </p>
+  </div>
+</section>
+
+<!-- ======= APPLICATION ======= -->
+<div id="ecran-app" class="app" hidden>
+  <header class="entete">
+    <div class="entete-marque">📅 <b>Tournées</b></div>
+    <div class="annee">
+      <button class="btn-icone" data-action="annee-precedente" title="Année précédente">◀</button>
+      <span>Campagne <b id="annee-courante">—</b></span>
+      <button class="btn-icone" data-action="annee-suivante" title="Année suivante">▶</button>
+    </div>
+    <nav class="onglets">
+      <button class="onglet actif" data-ecran="tableau">📊 Tableau de bord</button>
+      <button class="onglet" data-ecran="tournee">📋 Tournée</button>
+    </nav>
+    <div class="entete-actions">
+      <button class="btn" data-action="importer-retour">📥 Importer un retour</button>
+      <button class="btn-icone" data-action="ouvrir-menu-base" title="Base de données">⚙</button>
+    </div>
+  </header>
+  <div id="bandeau-fichier" class="bandeau" hidden></div>
+
+  <div class="corps">
+    <aside class="barre-laterale">
+      <div class="barre-laterale-titre">
+        <h2>Tournées</h2>
+        <button class="btn-icone" data-action="nouvelle-tournee" title="Nouvelle tournée">＋</button>
+      </div>
+      <ul id="liste-tournees" class="liste-tournees"></ul>
+    </aside>
+
+    <main class="contenu">
+      <!-- Tableau de bord -->
+      <section id="ecran-tableau" class="ecran">
+        <h1>Campagne <span class="annee-texte"></span></h1>
+        <div id="tableau-chiffres" class="cartes-chiffres"></div>
+        <table class="tableau">
+          <thead>
+            <tr>
+              <th>Tournée</th><th>Responsable</th><th class="num">Maisons</th><th>Avancement</th>
+              <th class="num">Dons</th><th class="num">Total <span class="annee-texte"></span></th>
+              <th class="num">Total <span class="annee-precedente-texte"></span></th><th class="num">Évolution</th>
+              <th>Dernier retour</th>
+            </tr>
+          </thead>
+          <tbody id="tableau-corps"></tbody>
+        </table>
+      </section>
+
+      <!-- Fiche tournée -->
+      <section id="ecran-tournee" class="ecran" hidden>
+        <div id="tournee-vide" class="vide">Choisissez une tournée dans la liste, ou créez-en une.</div>
+        <div id="tournee-active" hidden>
+          <div class="tournee-entete">
+            <div>
+              <h1 id="tournee-nom"></h1>
+              <p id="tournee-infos" class="discret"></p>
+            </div>
+            <div class="tournee-actions">
+              <button class="btn btn-primaire" data-action="exporter-terrain">📤 Fichier pour le terrain</button>
+              <button class="btn" data-action="nouvelle-maison">➕ Maison</button>
+              <button class="btn" data-action="geocoder-tournee">🌍 Géocoder</button>
+              <button class="btn" data-action="imprimer">🖨 Imprimer</button>
+              <button class="btn-icone" data-action="modifier-tournee" title="Modifier la tournée">✏️</button>
+            </div>
+          </div>
+          <div id="tournee-chiffres" class="cartes-chiffres"></div>
+          <div class="barre-filtres">
+            <input id="recherche-maison" type="search" placeholder="🔍 Rechercher (nom, rue, lieu-dit, remarque…)" />
+            <select id="filtre-statut">
+              <option value="">Tous les statuts</option>
+            </select>
+            <div class="vues">
+              <button class="vue actif" data-vue="tableau">📋 Liste</button>
+              <button class="vue" data-vue="carte">🗺️ Carte</button>
+            </div>
+          </div>
+          <div id="vue-tableau">
+            <table class="tableau tableau-maisons">
+              <thead>
+                <tr>
+                  <th class="num">#</th><th>N°</th><th>Voie</th><th>Habitant</th><th>État</th>
+                  <th class="num annee-n2"></th><th class="num annee-n1"></th>
+                  <th class="col-statut">Statut <span class="annee-texte"></span></th>
+                  <th class="col-don">Don</th><th>Remarque</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="maisons-corps"></tbody>
+            </table>
+          </div>
+          <div id="vue-carte" hidden><div id="carte"></div></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- ======= FENÊTRE : TOURNÉE ======= -->
+<dialog id="dlg-tournee" class="fenetre">
+  <form method="dialog">
+    <h2 id="dlg-tournee-titre">Tournée</h2>
+    <label class="champ"><span>Nom *</span><input id="t-nom" required /></label>
+    <label class="champ"><span>Responsable</span><input id="t-responsable" /></label>
+    <label class="champ"><span>Secteur</span><input id="t-secteur" /></label>
+    <div class="fenetre-actions">
+      <button type="button" class="btn btn-danger" data-action="supprimer-tournee" id="btn-supprimer-tournee">🗑 Supprimer</button>
+      <span class="espace"></span>
+      <button type="button" class="btn" data-action="fermer-dialogue">Annuler</button>
+      <button type="button" class="btn btn-primaire" data-action="enregistrer-tournee">Enregistrer</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ======= FENÊTRE : MAISON ======= -->
+<dialog id="dlg-maison" class="fenetre fenetre-large">
+  <form method="dialog">
+    <h2 id="dlg-maison-titre">Maison</h2>
+    <div class="grille">
+      <label class="champ"><span>Commune</span><input id="m-commune" list="liste-communes" /></label>
+      <label class="champ"><span>Lieu-dit</span><input id="m-lieu" list="liste-lieux" /></label>
+      <label class="champ champ-court"><span>Ordre lieu-dit</span><input id="m-ordre-lieu" type="number" min="0" /></label>
+      <label class="champ champ-court"><span>N°</span><input id="m-numero" /></label>
+      <label class="champ"><span>Voie</span><input id="m-voie" list="liste-voies" /></label>
+      <label class="champ champ-court"><span>Ordre rue</span><input id="m-ordre-rue" type="number" min="0" /></label>
+      <label class="champ"><span>Habitant</span><input id="m-nom" /></label>
+      <label class="champ"><span>État</span><select id="m-etat"></select></label>
+      <label class="champ"><span>Tournée</span><select id="m-tournee"></select></label>
+    </div>
+    <label class="champ"><span>Infos permanentes (affichées chaque année)</span><input id="m-infos" placeholder="Ex : chien, passer le matin…" /></label>
+    <div class="ligne-gps">
+      <span id="m-gps">Position : —</span>
+      <button type="button" class="btn" data-action="geocoder-maison">🌍 Chercher l'adresse (BAN)</button>
+      <span id="m-gps-resultat" class="discret"></span>
+    </div>
+    <h3>Historique</h3>
+    <div id="m-historique" class="historique"></div>
+    <datalist id="liste-communes"></datalist>
+    <datalist id="liste-lieux"></datalist>
+    <datalist id="liste-voies"></datalist>
+    <div class="fenetre-actions">
+      <button type="button" class="btn btn-danger" data-action="supprimer-maison" id="btn-supprimer-maison">🗑 Supprimer</button>
+      <span class="espace"></span>
+      <button type="button" class="btn" data-action="fermer-dialogue">Annuler</button>
+      <button type="button" class="btn btn-primaire" data-action="enregistrer-maison">Enregistrer</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ======= FENÊTRE : IMPORT D'UN RETOUR ======= -->
+<dialog id="dlg-retour" class="fenetre fenetre-large">
+  <form method="dialog">
+    <h2>Importer un retour du terrain</h2>
+    <p id="retour-resume" class="discret"></p>
+    <p id="retour-alerte" class="alerte" hidden></p>
+    <div class="retour-tableau">
+      <table class="tableau">
+        <thead><tr><th><input type="checkbox" id="retour-tout" checked /></th><th>Maison</th><th>Avant</th><th>Après</th></tr></thead>
+        <tbody id="retour-corps"></tbody>
+      </table>
+    </div>
+    <div class="fenetre-actions">
+      <span class="espace"></span>
+      <button type="button" class="btn" data-action="fermer-dialogue">Annuler</button>
+      <button type="button" class="btn btn-primaire" data-action="appliquer-retour">✓ Intégrer la sélection</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ======= FENÊTRE : MENU BASE ======= -->
+<dialog id="dlg-base" class="fenetre">
+  <form method="dialog">
+    <h2>Base de données</h2>
+    <p id="base-etat" class="discret"></p>
+    <div class="menu-liste">
+      <button type="button" class="btn" data-action="lier-fichier">💾 Enregistrer dans un fichier…</button>
+      <button type="button" class="btn" data-action="telecharger-copie">⬇ Télécharger une copie datée</button>
+      <button type="button" class="btn" data-action="exporter-csv">📊 Export Excel (CSV) de l'année</button>
+      <button type="button" class="btn" data-action="importer-v1">📥 Importer une sauvegarde de l'ancienne application</button>
+      <button type="button" class="btn" data-action="changer-base">📂 Ouvrir une autre base</button>
+    </div>
+    <h3>Journal</h3>
+    <ul id="base-journal" class="journal"></ul>
+    <div class="fenetre-actions">
+      <span class="espace"></span>
+      <button type="button" class="btn btn-primaire" data-action="fermer-dialogue">Fermer</button>
+    </div>
+  </form>
+</dialog>
+
+<input id="fichier-retour" type="file" accept=".json,application/json" multiple hidden />
+<input id="fichier-v1" type="file" accept=".json,application/json" hidden />
+<input id="fichier-base" type="file" accept=".json,application/json" hidden />
+<div id="zone-impression" class="zone-impression"></div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="gestion.js"></script>
+</body>
+</html>

@@ -3,7 +3,7 @@
    Changer VERSION à chaque mise en ligne pour que les téléphones prennent la mise à jour.
    ============================================= */
 
-const VERSION = 'terrain-0.1.1';
+const VERSION = 'terrain-0.1.2';
 const CACHE_APP = 'app-' + VERSION;
 const CACHE_EXTERNE = 'externe-v1';   // Leaflet + tuiles de carte déjà vues
 const MAX_TUILES = 600;
@@ -46,6 +46,8 @@ self.addEventListener('fetch', (e) => {
 
   // API Adresse : toujours en direct (pas de cache, l'app gère l'absence de réseau)
   if (url.hostname === 'api-adresse.data.gouv.fr') return;
+  // L'app de gestion (PC) n'est pas concernée par le mode hors connexion du terrain
+  if (url.pathname.includes('/gestion/')) return;
 
   // Tuiles de carte : cache d'abord, puis réseau (les zones déjà vues restent disponibles)
   if (url.hostname.endsWith('tile.openstreetmap.org')) {
@@ -62,7 +64,9 @@ self.addEventListener('fetch', (e) => {
   // Fichiers de l'app : réseau d'abord (mises à jour), cache si hors connexion
   if (url.origin === self.location.origin) {
     e.respondWith(
-      fetch(req)
+      // no-cache : contourne le cache HTTP de GitHub Pages (10 min) pour voir les mises à jour tout de suite
+      // (req.url et non req : une requête de navigation ne peut pas recevoir d'options)
+      fetch(req.url, { cache: 'no-cache' })
         .then(rep => {
           if (rep.ok) caches.open(CACHE_APP).then(c => c.put(req, rep.clone()));
           return rep;
