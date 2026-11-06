@@ -3,7 +3,7 @@
    Changer VERSION à chaque mise en ligne pour que les téléphones prennent la mise à jour.
    ============================================= */
 
-const VERSION = 'terrain-0.1.4';
+const VERSION = 'terrain-0.1.5';
 const CACHE_APP = 'app-' + VERSION;
 const CACHE_EXTERNE = 'externe-v1';   // Leaflet + tuiles de carte déjà vues
 const MAX_TUILES = 600;
@@ -91,11 +91,20 @@ self.addEventListener('fetch', (e) => {
 async function recevoirPartage(req) {
   try {
     const formulaire = await req.formData();
-    const fichier = formulaire.get('fichier');
-    if (fichier && typeof fichier.text === 'function') {
-      const cache = await caches.open(CACHE_PARTAGE);
-      await cache.put(CLE_PARTAGE, new Response(await fichier.text(), { headers: { 'X-Nom-Fichier': encodeURIComponent(fichier.name || '') } }));
+    // Description de ce qui a été reçu, pour diagnostiquer un partage qui échoue
+    const recu = [];
+    let contenu = '';
+    for (const [nom, valeur] of formulaire.entries()) {
+      if (typeof valeur === 'string') {
+        recu.push(`${nom}=texte(${valeur.length})`);
+        if (nom === 'fichier' && !contenu) contenu = valeur;
+      } else {
+        recu.push(`${nom}=${valeur.name || '?'} [${valeur.type || 'type ?'}, ${valeur.size} o]`);
+        if (nom === 'fichier' && !contenu) contenu = await valeur.text();
+      }
     }
+    const cache = await caches.open(CACHE_PARTAGE);
+    await cache.put(CLE_PARTAGE, new Response(contenu, { headers: { 'X-Recu': encodeURIComponent(recu.join(' ; ') || 'rien') } }));
   } catch (err) {
     console.warn('Partage illisible', err);
   }

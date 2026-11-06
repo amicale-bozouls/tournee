@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.1.4';
+const APP_VERSION = '0.1.5';
 const CLE_STOCKAGE = 'tournee_terrain_v2';
 const CLE_BENEVOLE = 'tournee_terrain_benevole';
 const FORMAT_TOURNEE = 'tournee-bozouls';
@@ -222,9 +222,19 @@ function importerTournee(donnees) {
   return true;
 }
 
-function ouvrirTexteTournee(texte) {
+function ouvrirTexteTournee(texte, diagnostic = '') {
   try {
-    const donnees = JSON.parse(texte);
+    // Certains envois ajoutent une marque d'encodage (BOM) ou des espaces autour du contenu
+    const propre = String(texte || '').replace(/^\uFEFF/, '').trim();
+    if (!propre) throw new Error('Le fichier reçu est vide.' + (diagnostic ? `\n\nReçu : ${diagnostic}` : '') +
+      '\n\nEn attendant, utilisez « Ouvrir un fichier de tournée ».');
+    let donnees;
+    try {
+      donnees = JSON.parse(propre);
+    } catch (e) {
+      throw new Error('Fichier illisible (ce n\'est pas un fichier de tournée).' +
+        (diagnostic ? `\n\nReçu : ${diagnostic}\nDébut : ${propre.slice(0, 60)}` : ''));
+    }
     if (donnees && donnees.format === FORMAT_RETOUR) {
       throw new Error('Ce fichier est un retour de tournée : il s\'ouvre sur le PC du responsable, pas ici.');
     }
@@ -233,7 +243,7 @@ function ouvrirTexteTournee(texte) {
       toast(`✅ Tournée « ${etat.tournee.nom} » chargée`);
     }
   } catch (e) {
-    alerte('❌ ' + (e instanceof SyntaxError ? 'Fichier illisible (ce n\'est pas un fichier de tournée).' : e.message));
+    alerte('❌ ' + e.message);
   }
 }
 
@@ -253,7 +263,7 @@ async function ouvrirFichierPartage() {
     const rep = await cache.match('fichier-partage');
     if (!rep) { alerte('❌ Le fichier partagé n\'a pas pu être récupéré. Réessayez, ou utilisez « Ouvrir un fichier de tournée ».'); return; }
     await cache.delete('fichier-partage');
-    ouvrirTexteTournee(await rep.text());
+    ouvrirTexteTournee(await rep.text(), decodeURIComponent(rep.headers.get('X-Recu') || ''));
   } catch (e) {
     alerte('❌ Fichier partagé illisible : ' + e.message);
   }
