@@ -3,7 +3,7 @@
    Changer VERSION à chaque mise en ligne pour que les téléphones prennent la mise à jour.
    ============================================= */
 
-const VERSION = 'terrain-0.1.5';
+const VERSION = 'terrain-0.1.6';
 const CACHE_APP = 'app-' + VERSION;
 const CACHE_EXTERNE = 'externe-v1';   // Leaflet + tuiles de carte déjà vues
 const MAX_TUILES = 600;
@@ -93,16 +93,19 @@ async function recevoirPartage(req) {
     const formulaire = await req.formData();
     // Description de ce qui a été reçu, pour diagnostiquer un partage qui échoue
     const recu = [];
-    let contenu = '';
+    const fichiers = [];
     for (const [nom, valeur] of formulaire.entries()) {
       if (typeof valeur === 'string') {
         recu.push(`${nom}=texte(${valeur.length})`);
-        if (nom === 'fichier' && !contenu) contenu = valeur;
       } else {
         recu.push(`${nom}=${valeur.name || '?'} [${valeur.type || 'type ?'}, ${valeur.size} o]`);
-        if (nom === 'fichier' && !contenu) contenu = await valeur.text();
+        fichiers.push(valeur);
       }
     }
+    // WhatsApp envoie aussi un petit « shared.txt » (le nom du fichier) : on garde le vrai fichier JSON
+    const note = (f) => (/\.json$/i.test(f.name || '') ? 4 : 0) + (/json/i.test(f.type || '') ? 2 : 0) + (/^shared\.txt$/i.test(f.name || '') ? -4 : 0);
+    fichiers.sort((a, b) => note(b) - note(a) || b.size - a.size);
+    const contenu = fichiers.length ? await fichiers[0].text() : '';
     const cache = await caches.open(CACHE_PARTAGE);
     await cache.put(CLE_PARTAGE, new Response(contenu, { headers: { 'X-Recu': encodeURIComponent(recu.join(' ; ') || 'rien') } }));
   } catch (err) {
