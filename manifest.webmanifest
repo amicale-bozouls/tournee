@@ -15,7 +15,7 @@
     "enctype": "multipart/form-data",
     "params": {
       "files": [
-        { "name": "fichier", "accept": [".json", "application/json", "application/octet-stream", "text/plain"] }
+        { "name": "fichier", "accept": [".json", "application/json", "application/octet-stream", "text/plain", "application/*", "text/*"] }
       ]
     }
   },

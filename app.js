@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.1.3';
+const APP_VERSION = '0.1.4';
 const CLE_STOCKAGE = 'tournee_terrain_v2';
 const CLE_BENEVOLE = 'tournee_terrain_benevole';
 const FORMAT_TOURNEE = 'tournee-bozouls';
@@ -805,6 +805,7 @@ function initEvenements() {
 // ============================================================
 function init() {
   $('version-app').textContent = APP_VERSION;
+  $('version-accueil').textContent = APP_VERSION;
   remplirSelects();
   chargerEtat();
   initEvenements();
