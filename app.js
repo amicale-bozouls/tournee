@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.3.1';
+const APP_VERSION = '0.3.2';
 const CLE_STOCKAGE = 'tournee_terrain_v2';
 const CLE_BENEVOLE = 'tournee_terrain_benevole';
 const CLE_MISE_A_JOUR = 'tournee_terrain_maj';
@@ -25,9 +25,9 @@ const STATUTS = {
 // Boutons des maisons : un statut de passage, ou un état de maison (Absent et Refus restent dans la fiche)
 const ACTIONS_RAPIDES = [
   { statut: 'don' },
-  { etat: 'inhabitee', libelle: 'Inhabitée' },
   { statut: 'repasser' },
   { statut: 'boite_lettres' },
+  { etat: 'inhabitee', libelle: 'Inhabitée' },
   { etat: 'secondaire', libelle: 'Secondaire' }
 ];
 const ETATS = {

@@ -126,7 +126,7 @@ input, select, textarea { font: inherit; color: var(--texte); }
 .maison-statut b { display: block; font-size: 18px; }
 .btn-detail { border: none; background: #eef1f5; border-radius: 10px; width: 40px; height: 40px; font-size: 18px; flex-shrink: 0; }
 
-.actions-rapides { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
+.actions-rapides { display: grid; grid-template-columns: .75fr 1.1fr .7fr 1.1fr 1.25fr; gap: 4px; margin-top: 10px; }
 .action {
   border: 1px solid var(--bordure); background: #fff; border-radius: 10px;
   min-height: 44px; font-size: 13px; font-weight: 600; padding: 4px 2px;
@@ -150,7 +150,12 @@ input, select, textarea { font: inherit; color: var(--texte); }
 .action.actif[data-statut="repasser"] { background: var(--st-repasser); }
 .action.actif[data-statut="boite_lettres"] { background: var(--st-boite_lettres); }
 .action.actif[data-statut="refuse"] { background: var(--st-refuse); }
-.maison.inactive { opacity: .6; }
+.action.actif[data-statut="inhabitee"] { background: var(--st-absent); }
+.action.actif[data-statut="secondaire"] { background: var(--st-autre); }
+.maison[data-statut="sans_don"] { border-left-color: var(--st-autre); }
+.maison[data-statut="sans_don"] .maison-statut { color: var(--st-autre); }
+/* Maison vide : on atténue les textes, jamais les boutons (il faut pouvoir revenir en arrière) */
+.maison.inactive .maison-infos, .maison.inactive .maison-statut, .maison.inactive .maison-remarque { opacity: .6; }
 
 /* ---------- Carte ---------- */
 .vue-carte { position: fixed; left: 0; right: 0; top: var(--hauteur-entete, 150px); bottom: calc(64px + var(--bas-securite)); z-index: 10; }
