@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.14.0';
+const APP_VERSION = '0.15.0';
 const FORMAT_BASE = 'base-tournees-bozouls';
 const FORMAT_TOURNEE = 'tournee-bozouls';
 const FORMAT_RETOUR = 'retour-tournee-bozouls';
@@ -1256,6 +1256,7 @@ function exporterTerrain() {
         id: m.id, commune: m.commune, lieu: m.lieu, ordreLieu: m.ordreLieu, numero: m.numero, voie: m.voie, ordreRue: m.ordreRue,
         nom: m.nom, etat: m.etat, lat: m.lat, lng: m.lng, infos: m.infos,
         voisineId: m.voisineId || '', cote: m.cote || 'apres', posApprochee: !!m.posApprochee, creeLe: m.creeLe || '',
+        nbCalendriers: m.nbCalendriers ?? 1,
         historique: base.passages
           .filter(x => x.maisonId === m.id && x.annee < a && x.annee >= a - NB_ANNEES_HISTORIQUE && x.statut !== 'a_visiter')
           .sort((x, y) => y.annee - x.annee)
@@ -1273,11 +1274,12 @@ function exporterTerrain() {
 // ============================================================
 // IMPORT D'UN RETOUR (aperçu puis intégration)
 // ============================================================
-function decrire(p, etat, nom, lieuAdresse, infos) {
+function decrire(p, etat, nom, lieuAdresse, infos, calendriers) {
   const morceaux = [libelleStatut(p)];
   if (p.statut === 'don') morceaux[0] += ' ' + euros(p.don);
   if (lieuAdresse) morceaux.push('Adresse : ' + lieuAdresse);
   if (infos) morceaux.push('Infos : ' + infos);
+  if (calendriers != null) morceaux.push('Calendriers : ' + calendriers);
   if (p.remarque) morceaux.push('« ' + p.remarque + ' »');
   if (etat) morceaux.push(ETATS[etat] || etat);
   if (nom) morceaux.push('Habitant : ' + nom);
@@ -1311,9 +1313,10 @@ async function lireRetour(f) {
     // Absent des retours envoyés par les versions terrain antérieures à 0.2.0
     const changeAdresse = r.voie !== undefined && (r.numero !== (m.numero || '') || r.voie !== (m.voie || '') || r.lieu !== (m.lieu || ''));
     const changeInfos = r.infos !== undefined && r.infos !== (m.infos || '');
-    if (!changeNom && !changeEtat && !changeGps && !changePassage && !changeAdresse && !changeInfos) { aJour++; continue; }
+    const changeCalendriers = r.nbCalendriers != null && r.nbCalendriers !== (m.nbCalendriers ?? 1);
+    if (!changeNom && !changeEtat && !changeGps && !changePassage && !changeAdresse && !changeInfos && !changeCalendriers) { aJour++; continue; }
     const pcPlusRecent = avant.modifieLe && apres.modifieLe && avant.modifieLe > apres.modifieLe;
-    lignes.push({ type: 'maison', r, m, avant, apres, changeNom, changeEtat, changeGps, changePassage, changeAdresse, changeInfos, pcPlusRecent, coche: !pcPlusRecent });
+    lignes.push({ type: 'maison', r, m, avant, apres, changeNom, changeEtat, changeGps, changePassage, changeAdresse, changeInfos, changeCalendriers, pcPlusRecent, coche: !pcPlusRecent });
   }
   for (const n of retour.nouvelles || []) {
     if (maison(n.id)) { aJour++; continue; }   // déjà intégrée lors d'un précédent retour
@@ -1341,8 +1344,8 @@ async function lireRetour(f) {
     }
     return `<tr><td><input type="checkbox" data-ligne="${i}" ${l.coche ? 'checked' : ''} /></td>
       <td><b>${esc(adresse(l.m))}</b><div class="discret">${esc(l.m.nom)}</div></td>
-      <td class="discret">${esc(decrire(l.avant, l.changeEtat ? l.m.etat : null, l.changeNom ? l.m.nom || '—' : null, l.changeAdresse ? [l.m.numero, l.m.voie, l.m.lieu].filter(Boolean).join(' ') || '—' : null, l.changeInfos ? l.m.infos || '—' : null))}${l.pcPlusRecent ? '<br>⚠️ modifié sur le PC le ' + dateCourte(l.avant.modifieLe) : ''}</td>
-      <td>${esc(decrire(l.apres, l.changeEtat ? l.r.etat : null, l.changeNom ? l.r.nom || '—' : null, l.changeAdresse ? [l.r.numero, l.r.voie, l.r.lieu].filter(Boolean).join(' ') || '—' : null, l.changeInfos ? l.r.infos || '—' : null))}${l.changeGps ? ' · 📍 position' : ''}</td></tr>`;
+      <td class="discret">${esc(decrire(l.avant, l.changeEtat ? l.m.etat : null, l.changeNom ? l.m.nom || '—' : null, l.changeAdresse ? [l.m.numero, l.m.voie, l.m.lieu].filter(Boolean).join(' ') || '—' : null, l.changeInfos ? l.m.infos || '—' : null, l.changeCalendriers ? l.m.nbCalendriers ?? 1 : null))}${l.pcPlusRecent ? '<br>⚠️ modifié sur le PC le ' + dateCourte(l.avant.modifieLe) : ''}</td>
+      <td>${esc(decrire(l.apres, l.changeEtat ? l.r.etat : null, l.changeNom ? l.r.nom || '—' : null, l.changeAdresse ? [l.r.numero, l.r.voie, l.r.lieu].filter(Boolean).join(' ') || '—' : null, l.changeInfos ? l.r.infos || '—' : null, l.changeCalendriers ? l.r.nbCalendriers : null))}${l.changeGps ? ' · 📍 position' : ''}</td></tr>`;
   }).join('') || '<tr><td colspan="4" class="vide">Rien de nouveau dans ce retour.</td></tr>';
   $('retour-tout').checked = lignes.every(l => l.coche || l.type === 'inconnue');
   $('dlg-retour').showModal();
@@ -1364,6 +1367,7 @@ function appliquerRetour() {
       if (l.changeGps) { l.m.lat = l.r.lat; l.m.lng = l.r.lng; l.m.geoLabel = 'Relevé sur le terrain'; l.m.posApprochee = !!l.r.posApprochee; }
       if (l.changeAdresse) { l.m.numero = l.r.numero; l.m.voie = l.r.voie; l.m.lieu = l.r.lieu; }
       if (l.changeInfos) l.m.infos = l.r.infos;
+      if (l.changeCalendriers) l.m.nbCalendriers = l.r.nbCalendriers;
       nbMaj++;
     } else if (l.type === 'nouvelle') {
       const n = l.r;
