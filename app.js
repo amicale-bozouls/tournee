@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.2.4';
+const APP_VERSION = '0.2.6';
 const CLE_STOCKAGE = 'tournee_terrain_v2';
 const CLE_BENEVOLE = 'tournee_terrain_benevole';
 const CLE_MISE_A_JOUR = 'tournee_terrain_maj';
@@ -233,6 +233,7 @@ function importerTournee(donnees) {
           m.numero = l.numero;
           m.voie = l.voie;
           m.lieu = l.lieu;
+          m.infos = l.infos;
           if (l.lat != null) { m.lat = l.lat; m.lng = l.lng; m.posApprochee = l.posApprochee; }
         }
         locales.delete(m.id);
@@ -334,7 +335,7 @@ function construireRetour() {
     benevole: etat.benevole || '',
     maisons: modifiees.filter(m => !m.nouvelle).map(m => ({
       id: m.id, passage: m.passage, etat: m.etat, nom: m.nom, lat: m.lat, lng: m.lng,
-      numero: m.numero, voie: m.voie, lieu: m.lieu, posApprochee: m.posApprochee
+      numero: m.numero, voie: m.voie, lieu: m.lieu, infos: m.infos, posApprochee: m.posApprochee
     })),
     nouvelles: modifiees.filter(m => m.nouvelle).map(m => ({ ...m, aValider: true }))
   };
@@ -520,7 +521,7 @@ function ouvrirFicheMaison(id, voisineId = null) {
   $('btn-placer-hameau').textContent = `🏘 Placer tout le hameau (${hameau.length})`;
   const historique = m ? (m.historique || []).slice().sort((a, b) => b.annee - a.annee)
     .map(h => `${h.annee} : ${h.statut === 'don' ? euros(h.don) : (STATUTS[h.statut] ? STATUTS[h.statut].libelle : h.statut)}`).join(' · ') : '';
-  $('maison-historique').textContent = [m && m.infos, historique].filter(Boolean).join(' — ');
+  $('maison-historique').textContent = historique;
 
   // Pour une nouvelle maison, on propose la rue / le lieu de la dernière maison saisie
   const derniere = m || voisine ? null : etat.maisons.filter(x => x.passage.modifieLe).sort((a, b) => b.passage.modifieLe.localeCompare(a.passage.modifieLe))[0];
@@ -533,6 +534,7 @@ function ouvrirFicheMaison(id, voisineId = null) {
   $('m-don').value = m && m.passage.don > 0 ? String(m.passage.don).replace('.', ',') : '';
   $('m-etat').value = m ? m.etat : 'habitee';
   $('m-remarque').value = m ? m.passage.remarque : '';
+  $('m-infos').value = m ? m.infos : '';
   $('m-adresse-proposee').hidden = true;
   afficherGpsFiche();
 
@@ -596,7 +598,8 @@ function enregistrerMaison() {
     voie: $('m-voie').value.trim(),
     lieu: $('m-lieu').value.trim(),
     nom: $('m-nom').value.trim(),
-    etat: $('m-etat').value
+    etat: $('m-etat').value,
+    infos: $('m-infos').value.trim()
   };
   const passage = {
     statut: $('m-statut').value,
@@ -772,6 +775,7 @@ function afficherVue(vue) {
   document.querySelector('.barre-outils').hidden = vue !== 'liste';
   $('vue-carte').hidden = vue !== 'carte';
   if (vue === 'carte') initCarte();
+  programmerRetour();
 }
 
 function initCarte() {
@@ -941,10 +945,63 @@ function meLocaliser() {
 function ouvrirFeuille(id) {
   fermerFeuilles();
   $(id).hidden = false;
+  programmerRetour();
 }
 
 function fermerFeuilles() {
   document.querySelectorAll('.feuille-fond').forEach(f => { f.hidden = true; });
+  programmerRetour();
+}
+
+// ============================================================
+// FLÈCHE RETOUR D'ANDROID
+// ============================================================
+// Tant qu'une fenêtre ou la carte est ouverte, une entrée d'historique « de garde » existe :
+// la flèche retour referme ce qui est ouvert au lieu de quitter l'application.
+let gardeRetour = false;
+let ignorerRetour = false;
+let minuteurRetour = null;
+
+function feuilleOuverte() {
+  return !!document.querySelector('.feuille-fond:not([hidden])');
+}
+
+function coucheOuverte() {
+  return !!placement || feuilleOuverte() || !$('vue-carte').hidden;
+}
+
+// Différé : fermer puis ouvrir une feuille dans le même geste ne doit pas toucher à l'historique
+function programmerRetour() {
+  clearTimeout(minuteurRetour);
+  minuteurRetour = setTimeout(synchroniserRetour, 0);
+}
+
+function synchroniserRetour() {
+  if (coucheOuverte() && !gardeRetour) {
+    history.pushState({ garde: true }, '');
+    gardeRetour = true;
+  } else if (!coucheOuverte() && gardeRetour) {
+    gardeRetour = false;
+    ignorerRetour = true;
+    history.back();
+  }
+}
+
+function fermerCoucheDuDessus() {
+  if (placement) { terminerPlacement(); afficherMarqueurs(false); }
+  else if (feuilleOuverte()) fermerFeuilles();
+  else afficherVue('liste');
+}
+
+function auRetourAndroid() {
+  if (ignorerRetour) { ignorerRetour = false; return; }
+  gardeRetour = false;
+  if (coucheOuverte()) {
+    fermerCoucheDuDessus();
+    programmerRetour();
+  } else {
+    history.back();   // entrée restée d'avant un rechargement : on continue vers la sortie
+  }
 }
 
 function ouvrirMenu() {
@@ -1022,6 +1079,7 @@ function initEvenements() {
   $('benevole').addEventListener('change', (e) => enregistrerBenevole(e.target.value));
 
   window.addEventListener('resize', () => { if (etat) ajusterHauteurEntete(); });
+  window.addEventListener('popstate', auRetourAndroid);
 }
 
 // ============================================================
