@@ -3,7 +3,7 @@
    Changer VERSION à chaque mise en ligne pour que les téléphones prennent la mise à jour.
    ============================================= */
 
-const VERSION = 'terrain-0.2.1';
+const VERSION = 'terrain-0.2.3';
 const CACHE_APP = 'app-' + VERSION;
 const CACHE_EXTERNE = 'externe-v1';   // Leaflet + tuiles de carte déjà vues
 const MAX_TUILES = 600;
@@ -28,7 +28,8 @@ const FICHIERS_APP = [
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(CACHE_APP)
-      .then(c => Promise.allSettled(FICHIERS_APP.map(f => c.add(f))))
+      // cache: 'reload' : ne pas reprendre les anciens fichiers gardés par le navigateur
+      .then(c => Promise.allSettled(FICHIERS_APP.map(f => c.add(new Request(f, { cache: 'reload' })))))
       .then(() => self.skipWaiting())
   );
 });

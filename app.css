@@ -161,6 +161,18 @@ input, select, textarea { font: inherit; color: var(--texte); }
 .popup-carte b { display: block; margin-bottom: 2px; }
 .popup-carte button { margin-top: 8px; width: 100%; padding: 8px; border-radius: 8px; border: none; background: var(--primaire); color: #fff; font-weight: 600; }
 
+.placement {
+  position: absolute; top: 10px; left: 10px; right: 10px; z-index: 1000;
+  background: var(--carte); border-radius: 12px; box-shadow: var(--ombre); padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 8px; font-size: 14px;
+}
+.placement-actions { display: flex; gap: 8px; }
+.placement-actions .btn { flex: 1; }
+.repere-placement { font-size: 34px; line-height: 34px; text-align: center; }
+.pile-carte { width: 34px; height: 34px; line-height: 30px; border-radius: 50%; background: var(--primaire); color: #fff; border: 2px solid #fff; text-align: center; font-weight: 700; font-size: 14px; box-shadow: var(--ombre); }
+.pile-liste { display: flex; flex-direction: column; gap: 4px; max-height: 45vh; overflow-y: auto; min-width: 200px; }
+.pile-liste button { border: none; background: #eef1f5; text-align: left; padding: 8px; border-radius: 8px; font-size: 14px; }
+
 /* ---------- Barre du bas + FAB ---------- */
 .barre-bas {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;

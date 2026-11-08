@@ -5,9 +5,10 @@
 
 'use strict';
 
-const APP_VERSION = '0.2.1';
+const APP_VERSION = '0.2.3';
 const CLE_STOCKAGE = 'tournee_terrain_v2';
 const CLE_BENEVOLE = 'tournee_terrain_benevole';
+const CLE_MISE_A_JOUR = 'tournee_terrain_maj';
 const FORMAT_TOURNEE = 'tournee-bozouls';
 const FORMAT_RETOUR = 'retour-tournee-bozouls';
 
@@ -47,6 +48,8 @@ let carte = null;
 let coucheMarqueurs = null;
 let marqueurMoi = null;
 const marqueursMaison = new Map();   // id de maison -> marqueur de la carte
+let placement = null;                // placement à la main en cours : { id, repere, auClic }
+const URL_VUE_AERIENNE = 'https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&FORMAT=image/jpeg&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}';
 
 function chargerEtat() {
   try {
@@ -385,6 +388,34 @@ async function envoyerRetour() {
   toast('📤 Retour envoyé');
 }
 
+// Prend la dernière version en ligne ; la tournée et les saisies (localStorage) ne sont pas touchées
+async function mettreAJourApplication() {
+  fermerFeuilles();
+  if (!navigator.onLine) { toast('Connexion nécessaire pour la mise à jour'); return; }
+  toast('🔄 Recherche d\'une mise à jour…');
+  try {
+    const source = await (await fetch('app.js', { cache: 'no-store' })).text();
+    const enLigne = (source.match(/APP_VERSION = '([^']+)'/) || [])[1];
+    if (!enLigne) throw new Error('version en ligne introuvable');
+    if (enLigne === APP_VERSION) { toast(`✓ Déjà à jour (version ${APP_VERSION})`); return; }
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (reg) {
+      await reg.update();
+      const nouveau = reg.installing || reg.waiting;
+      if (nouveau) {
+        await Promise.race([
+          new Promise(ok => nouveau.addEventListener('statechange', () => { if (nouveau.state === 'activated') ok(); })),
+          new Promise(ok => setTimeout(ok, 10000))
+        ]);
+      }
+    }
+    sessionStorage.setItem(CLE_MISE_A_JOUR, enLigne);
+    location.reload();
+  } catch (e) {
+    alerte('❌ Mise à jour impossible pour l\'instant : ' + e.message);
+  }
+}
+
 function enregistrerBenevole(prenom) {
   etat.benevole = String(prenom || '').trim();
   try { localStorage.setItem(CLE_BENEVOLE, etat.benevole); } catch (e) { /* non bloquant */ }
@@ -483,6 +514,7 @@ function ouvrirFicheMaison(id, voisineId = null) {
   $('maison-titre').textContent = m ? adresseMaison(m) : (voisine ? `Nouvelle maison à côté de : ${adresseMaison(voisine)}` : 'Nouvelle maison');
   $('m-cote-ligne').hidden = !voisine;
   $('m-cote').value = 'apres';
+  $('btn-placer-carte').hidden = !m;
   const historique = m ? (m.historique || []).slice().sort((a, b) => b.annee - a.annee)
     .map(h => `${h.annee} : ${h.statut === 'don' ? euros(h.don) : (STATUTS[h.statut] ? STATUTS[h.statut].libelle : h.statut)}`).join(' · ') : '';
   $('maison-historique').textContent = [m && m.infos, historique].filter(Boolean).join(' — ');
@@ -731,6 +763,7 @@ function ajusterHauteurEntete() {
 // CARTE
 // ============================================================
 function afficherVue(vue) {
+  if (placement) terminerPlacement();
   document.querySelectorAll('.onglet[data-vue]').forEach(b => b.classList.toggle('actif', b.dataset.vue === vue));
   $('vue-liste').hidden = vue !== 'liste';
   document.querySelector('.barre-outils').hidden = vue !== 'liste';
@@ -746,9 +779,11 @@ function initCarte() {
   $('carte-hors-ligne').hidden = true;
   if (!carte) {
     carte = L.map('carte', { zoomControl: false }).setView([44.47, 2.72], 14);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    const plan = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19, attribution: '© OpenStreetMap'
     }).addTo(carte);
+    const aerienne = L.tileLayer(URL_VUE_AERIENNE, { maxZoom: 19, attribution: '© IGN' });
+    L.control.layers({ 'Plan': plan, 'Vue aérienne': aerienne }, null, { collapsed: false, position: 'bottomleft' }).addTo(carte);
     coucheMarqueurs = L.layerGroup().addTo(carte);
     afficherMarqueurs(true);
   } else {
@@ -801,7 +836,56 @@ function afficherMarqueurs(cadrer) {
     marqueursMaison.set(m.id, marqueur);
     points.push([m.lat, m.lng]);
   }
-  if (cadrer && points.length) carte.fitBounds(points, { padding: [40, 40], maxZoom: 17 });
+  // Sans animation : un zoom en cours ferait ignorer le centrage demandé juste après (📍, 📌)
+  if (cadrer && points.length) carte.fitBounds(points, { padding: [40, 40], maxZoom: 17, animate: false });
+}
+
+// Placement à la main : un appui sur la carte ou un glisser du repère, puis validation
+function demarrerPlacement(id) {
+  if (typeof L === 'undefined') { toast('Carte indisponible sans réseau'); return; }
+  const m = trouverMaison(id);
+  fermerFeuilles();
+  afficherVue('carte');
+  const proches = etat.maisons.filter(x => x.lat != null);
+  const reference = m.lat != null ? m : (proches.find(x => normaliser(x.lieu) === normaliser(m.lieu)) || proches[0]);
+  const depart = reference ? [reference.lat, reference.lng] : carte.getCenter();
+  carte.closePopup();
+  carte.removeLayer(coucheMarqueurs);
+  const repere = L.marker(depart, {
+    draggable: true, autoPan: true,
+    icon: L.divIcon({ className: 'repere-placement', html: '📌', iconSize: [34, 34], iconAnchor: [17, 34] })
+  }).addTo(carte);
+  const auClic = (e) => repere.setLatLng(e.latlng);
+  carte.on('click', auClic);
+  placement = { id, repere, auClic };
+  $('placement-texte').textContent = `${adresseMaison(m)} : touchez l'endroit de la maison ou faites glisser le repère.`;
+  $('placement-bandeau').hidden = false;
+  document.querySelector('.fab').hidden = true;
+  setTimeout(() => carte.setView(depart, Math.max(carte.getZoom(), 18)), 120);
+}
+
+function terminerPlacement() {
+  carte.off('click', placement.auClic);
+  carte.removeLayer(placement.repere);
+  carte.addLayer(coucheMarqueurs);
+  $('placement-bandeau').hidden = true;
+  document.querySelector('.fab').hidden = false;
+  placement = null;
+}
+
+function validerPlacement() {
+  const m = trouverMaison(placement.id);
+  const { lat, lng } = placement.repere.getLatLng();
+  m.lat = lat;
+  m.lng = lng;
+  m.posApprochee = false;
+  m.passage.modifieLe = maintenant();   // pour que la position parte avec le retour
+  terminerPlacement();
+  sauverEtat();
+  afficherMarqueurs(false);
+  afficherListe();
+  afficherCompteurs();
+  toast('📌 Position enregistrée');
 }
 
 function voirSurCarte(id) {
@@ -876,6 +960,10 @@ function initEvenements() {
       case 'detail': ouvrirFicheMaison(idMaison); break;
       case 'a-cote': ouvrirFicheMaison(null, idMaison); break;
       case 'voir-carte': voirSurCarte(idMaison); break;
+      case 'placer-fiche': demarrerPlacement(maisonEnCours); break;
+      case 'valider-placement': validerPlacement(); break;
+      case 'mettre-a-jour': mettreAJourApplication(); break;
+      case 'annuler-placement': terminerPlacement(); afficherMarqueurs(false); break;
       case 'nouvelle-maison': ouvrirFicheMaison(null); break;
       case 'valider-don': validerDon(); break;
       case 'enregistrer-maison': enregistrerMaison(); break;
@@ -919,6 +1007,10 @@ function init() {
   initEvenements();
   afficher();
   ouvrirFichierPartage();
+  if (sessionStorage.getItem(CLE_MISE_A_JOUR)) {
+    sessionStorage.removeItem(CLE_MISE_A_JOUR);
+    toast(`✅ Application mise à jour (version ${APP_VERSION})`);
+  }
 
   // Demander au navigateur de ne pas effacer nos données en cas de manque de place
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});

@@ -117,7 +117,14 @@
               <tbody id="maisons-corps"></tbody>
             </table>
           </div>
-          <div id="vue-carte" hidden><div id="carte"></div></div>
+          <div id="vue-carte" hidden>
+            <div id="carte"></div>
+            <div id="placement-bandeau" class="placement" hidden>
+              <span id="placement-texte"></span>
+              <button class="btn" data-action="annuler-placement">Annuler</button>
+              <button class="btn btn-primaire" data-action="valider-placement">✓ Valider la position</button>
+            </div>
+          </div>
         </div>
       </section>
     </main>
@@ -167,6 +174,7 @@
     <div class="ligne-gps">
       <span id="m-gps">Position : —</span>
       <button type="button" class="btn" data-action="geocoder-maison">🌍 Chercher l'adresse (BAN)</button>
+      <button type="button" class="btn" data-action="placer-fiche" id="btn-placer-carte">📌 Placer sur la carte</button>
       <span id="m-gps-resultat" class="discret"></span>
     </div>
     <h3>Historique</h3>

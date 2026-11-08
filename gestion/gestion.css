@@ -148,6 +148,16 @@ h3 { font-size: 14px; margin-top: 12px; color: var(--texte-2); }
 /* ---------- Carte ---------- */
 #carte { height: calc(100vh - 300px); min-height: 400px; border-radius: var(--rayon); box-shadow: var(--ombre); }
 
+#vue-carte { position: relative; }
+.placement {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 1000; width: min(620px, 94%);
+  background: var(--carte); border-radius: 10px; box-shadow: var(--ombre); padding: 8px 12px;
+  display: flex; align-items: center; gap: 8px;
+}
+.placement span { flex: 1; }
+.repere-placement { font-size: 30px; line-height: 30px; text-align: center; }
+.pile-ligne { display: flex; gap: 2px; align-items: center; }
+.pile-ligne button:first-child { flex: 1; }
 .pile-carte { width: 30px; height: 30px; line-height: 26px; border-radius: 50%; background: var(--primaire); color: #fff; border: 2px solid #fff; text-align: center; font-weight: 700; font-size: 13px; box-shadow: var(--ombre); }
 .pile-liste { display: flex; flex-direction: column; gap: 3px; max-height: 240px; overflow-y: auto; min-width: 220px; }
 .pile-liste button { border: none; background: none; text-align: left; padding: 3px 4px; border-radius: 4px; }

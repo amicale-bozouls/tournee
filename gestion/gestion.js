@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.6.0';
+const APP_VERSION = '0.7.0';
 const FORMAT_BASE = 'base-tournees-bozouls';
 const FORMAT_TOURNEE = 'tournee-bozouls';
 const FORMAT_RETOUR = 'retour-tournee-bozouls';
@@ -51,6 +51,8 @@ let gpsDialogue = null;       // { lat, lng, score, label } trouvé dans la fich
 let retourEnCours = null;     // { retour, lignes }
 let carte = null, coucheCarte = null;
 const marqueursMaison = new Map();   // id de maison -> marqueur de la carte
+let placement = null;                // placement à la main en cours : { id, repere, auClic }
+const URL_VUE_AERIENNE = 'https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&FORMAT=image/jpeg&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}';
 
 const FS_DISPONIBLE = 'showOpenFilePicker' in window;
 
@@ -566,7 +568,7 @@ function rendreMaisons() {
       </select></td>
       <td><input class="saisie-don" data-champ="don" inputmode="decimal" value="${p.statut === 'don' && p.don ? esc(String(p.don).replace('.', ',')) : ''}" /></td>
       <td><input data-champ="remarque" value="${esc(p.remarque || '')}" title="${esc(p.benevole ? 'Saisi par ' + p.benevole : '')}" /></td>
-      <td style="white-space:nowrap">${m.lat != null ? '<button class="btn-icone" data-action="voir-carte" title="Voir sur la carte">📍</button>' : ''}<button class="btn-icone" data-action="ajouter-a-cote" title="Ajouter une maison à côté">➕</button><button class="btn-icone" data-action="modifier-maison" title="Fiche maison">✏️</button></td>
+      <td style="white-space:nowrap">${m.lat != null ? '<button class="btn-icone" data-action="voir-carte" title="Voir sur la carte">📍</button>' : '<button class="btn-icone" data-action="placer-carte" title="Placer sur la carte">📌</button>'}<button class="btn-icone" data-action="ajouter-a-cote" title="Ajouter une maison à côté">➕</button><button class="btn-icone" data-action="modifier-maison" title="Fiche maison">✏️</button></td>
     </tr>`;
   }
   $('maisons-corps').innerHTML = html ||
@@ -712,6 +714,7 @@ function ouvrirDialogueMaison(id, voisineId = null) {
   ).join('') || '<span class="discret">Aucun passage enregistré.</span>';
 
   $('btn-supprimer-maison').hidden = !m;
+  $('btn-placer-carte').hidden = !m;
   $('dlg-maison').showModal();
 }
 
@@ -974,6 +977,7 @@ async function lancerGps() {
 // CARTE
 // ============================================================
 function afficherVueTournee(vue) {
+  if (placement) terminerPlacement();
   vueTournee = vue;
   document.querySelectorAll('.vue').forEach(b => b.classList.toggle('actif', b.dataset.vue === vue));
   $('vue-tableau').hidden = vue !== 'tableau';
@@ -983,9 +987,12 @@ function afficherVueTournee(vue) {
 
 function rendreCarte(cadrer) {
   if (typeof L === 'undefined') { $('carte').textContent = 'Carte indisponible (pas de connexion).'; return; }
+  if (placement) terminerPlacement();
   if (!carte) {
     carte = L.map('carte').setView([44.47, 2.72], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(carte);
+    const plan = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(carte);
+    const aerienne = L.tileLayer(URL_VUE_AERIENNE, { maxZoom: 19, attribution: '© IGN' });
+    L.control.layers({ 'Plan': plan, 'Vue aérienne': aerienne }, null, { collapsed: false, position: 'bottomleft' }).addTo(carte);
     coucheCarte = L.layerGroup().addTo(carte);
   }
   setTimeout(() => carte.invalidateSize(), 30);
@@ -1012,11 +1019,15 @@ function rendreCarte(cadrer) {
     } else {
       mk = L.marker([lat, lng], { icon: L.divIcon({ className: '', html: `<div class="pile-carte">${pile.length}</div>`, iconSize: [30, 30] }) });
       mk.bindPopup(`<div class="pile-liste"><b>${pile.length} maisons au même point</b>${pile.map(m =>
-        `<button type="button" data-maison="${esc(m.id)}"><span class="pastille" style="background:${COULEURS[passage(m.id, a).statut] || COULEURS.autre}"></span>${esc(adresse(m))} — ${esc(m.nom)}</button>`).join('')}</div>`);
+        `<div class="pile-ligne"><button type="button" data-maison="${esc(m.id)}"><span class="pastille" style="background:${COULEURS[passage(m.id, a).statut] || COULEURS.autre}"></span>${esc(adresse(m))} — ${esc(m.nom)}</button><button type="button" data-placer="${esc(m.id)}" title="Placer sur la carte">📌</button></div>`).join('')}</div>`);
       // Leaflet bloque la propagation des clics dans les popups : écouteurs directs
       mk.on('popupopen', (e) => {
-        e.popup.getElement().querySelectorAll('[data-maison]').forEach(b => {
+        const bulle = e.popup.getElement();
+        bulle.querySelectorAll('[data-maison]').forEach(b => {
           b.onclick = () => { carte.closePopup(); ouvrirDialogueMaison(b.dataset.maison); };
+        });
+        bulle.querySelectorAll('[data-placer]').forEach(b => {
+          b.onclick = () => { carte.closePopup(); demarrerPlacement(b.dataset.placer); };
         });
       });
     }
@@ -1024,7 +1035,50 @@ function rendreCarte(cadrer) {
     pile.forEach(m => marqueursMaison.set(m.id, mk));
     points.push([lat, lng]);
   }
-  if (cadrer && points.length) carte.fitBounds(points, { padding: [30, 30], maxZoom: 17 });
+  // Sans animation : un zoom en cours ferait ignorer le centrage demandé juste après (📍, 📌)
+  if (cadrer && points.length) carte.fitBounds(points, { padding: [30, 30], maxZoom: 17, animate: false });
+}
+
+// Placement à la main : un clic sur la carte ou un glisser du repère, puis validation
+function demarrerPlacement(id) {
+  if (typeof L === 'undefined') { toast('Carte indisponible (pas de connexion).'); return; }
+  const m = maison(id);
+  document.querySelectorAll('dialog[open]').forEach(d => d.close());
+  afficherVueTournee('carte');
+  const proches = maisonsDe(m.tourneeId).filter(x => x.lat != null);
+  const reference = m.lat != null ? m : (proches.find(x => normaliser(x.lieu) === normaliser(m.lieu)) || proches[0]);
+  const depart = reference ? [reference.lat, reference.lng] : carte.getCenter();
+  carte.closePopup();
+  carte.removeLayer(coucheCarte);
+  const repere = L.marker(depart, {
+    draggable: true, autoPan: true,
+    icon: L.divIcon({ className: 'repere-placement', html: '📌', iconSize: [30, 30], iconAnchor: [15, 30] })
+  }).addTo(carte);
+  const auClic = (e) => repere.setLatLng(e.latlng);
+  carte.on('click', auClic);
+  placement = { id, repere, auClic };
+  $('placement-texte').textContent = `${adresse(m)} — cliquez à l'endroit de la maison ou faites glisser le repère.`;
+  $('placement-bandeau').hidden = false;
+  setTimeout(() => carte.setView(depart, Math.max(carte.getZoom(), 18)), 80);
+}
+
+function terminerPlacement() {
+  carte.off('click', placement.auClic);
+  carte.removeLayer(placement.repere);
+  carte.addLayer(coucheCarte);
+  $('placement-bandeau').hidden = true;
+  placement = null;
+}
+
+function validerPlacement() {
+  const m = maison(placement.id);
+  const { lat, lng } = placement.repere.getLatLng();
+  Object.assign(m, { lat, lng, posApprochee: false, geoNiveau: 'manuel', geoLabel: 'Placée à la main', geoScore: null });
+  terminerPlacement();
+  enregistrer();
+  rendreCarte(false);
+  rendreChiffresTournee();
+  toast('📌 Position enregistrée');
 }
 
 function voirSurCarte(id) {
@@ -1743,6 +1797,10 @@ async function action(nom, cible) {
     case 'modifier-maison': ouvrirDialogueMaison(cible.closest('tr[data-id]').dataset.id); break;
     case 'ajouter-a-cote': ouvrirDialogueMaison(null, cible.closest('tr[data-id]').dataset.id); break;
     case 'voir-carte': voirSurCarte(cible.closest('tr[data-id]').dataset.id); break;
+    case 'placer-carte': demarrerPlacement(cible.closest('tr[data-id]').dataset.id); break;
+    case 'placer-fiche': demarrerPlacement(maisonEditee); break;
+    case 'valider-placement': validerPlacement(); break;
+    case 'annuler-placement': terminerPlacement(); rendreCarte(false); break;
     case 'enregistrer-maison': enregistrerMaison(); break;
     case 'supprimer-maison': supprimerMaison(); break;
     case 'geocoder-maison': geocoderMaisonDialogue(); break;

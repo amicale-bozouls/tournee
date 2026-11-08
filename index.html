@@ -40,6 +40,7 @@
       <p>Vos saisies restent sur ce téléphone, même sans réseau.</p>
     </details>
     <p class="version">Version <span id="version-accueil"></span></p>
+    <button class="btn btn-discret" data-action="mettre-a-jour">🔄 Mettre à jour l'application</button>
   </div>
 </section>
 
@@ -81,6 +82,13 @@
     <div id="carte"></div>
     <button class="btn-rond btn-carte-position" data-action="me-localiser" aria-label="Ma position">📍</button>
     <p id="carte-hors-ligne" class="carte-info" hidden>Carte indisponible sans réseau.</p>
+    <div id="placement-bandeau" class="placement" hidden>
+      <span id="placement-texte"></span>
+      <div class="placement-actions">
+        <button class="btn" data-action="annuler-placement">Annuler</button>
+        <button class="btn btn-primaire" data-action="valider-placement">✓ Valider</button>
+      </div>
+    </div>
   </div>
 
   <div class="barre-bas">
@@ -145,6 +153,7 @@
     <div class="ligne-gps">
       <span id="m-gps-texte">Position : —</span>
       <button class="btn btn-discret" data-action="capturer-gps">📍 Je suis devant</button>
+      <button class="btn btn-discret" data-action="placer-fiche" id="btn-placer-carte">📌 Sur la carte</button>
     </div>
     <p id="m-adresse-proposee" class="proposition" hidden></p>
 
@@ -170,6 +179,7 @@
     <div class="menu-liste">
       <button class="btn btn-large" data-action="envoyer-retour">📤 Envoyer mon retour</button>
       <button class="btn btn-large" data-action="ouvrir-fichier">📂 Ouvrir un autre fichier de tournée</button>
+      <button class="btn btn-large" data-action="mettre-a-jour">🔄 Mettre à jour l'application</button>
       <button class="btn btn-large btn-danger" data-action="effacer-tournee">🗑 Effacer la tournée de ce téléphone</button>
     </div>
     <p class="version">Version <span id="version-app"></span></p>
