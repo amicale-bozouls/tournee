@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.2.0';
+const APP_VERSION = '0.2.1';
 const CLE_STOCKAGE = 'tournee_terrain_v2';
 const CLE_BENEVOLE = 'tournee_terrain_benevole';
 const FORMAT_TOURNEE = 'tournee-bozouls';
@@ -46,6 +46,7 @@ let gpsEnCours = null;      // { lat, lng, precision } capturé dans la fiche
 let carte = null;
 let coucheMarqueurs = null;
 let marqueurMoi = null;
+const marqueursMaison = new Map();   // id de maison -> marqueur de la carte
 
 function chargerEtat() {
   try {
@@ -686,6 +687,7 @@ function carteMaisonHTML(m) {
           ${n1 ? `<div class="maison-n1">${esc(n1)}</div>` : ''}
         </div>
         <div class="maison-statut">${statutTexte}</div>
+        ${m.lat != null ? '<button class="btn-detail" data-action="voir-carte" aria-label="Voir sur la carte">📍</button>' : ''}
         <button class="btn-detail" data-action="a-cote" aria-label="Ajouter une maison à côté">➕</button>
         <button class="btn-detail" data-action="detail" aria-label="Détail">✏️</button>
       </div>
@@ -757,9 +759,32 @@ function initCarte() {
 
 function afficherMarqueurs(cadrer) {
   coucheMarqueurs.clearLayers();
+  marqueursMaison.clear();
   const points = [];
-  for (const m of etat.maisons) {
+  // Les maisons placées sur un même point (rue, hameau) sont regroupées sous une pastille numérotée
+  const piles = new Map();
+  for (const m of maisonsTriees()) {
     if (m.lat == null || m.lng == null) continue;
+    const k = m.lat.toFixed(5) + ',' + m.lng.toFixed(5);
+    if (!piles.has(k)) piles.set(k, []);
+    piles.get(k).push(m);
+  }
+  for (const pile of piles.values()) {
+    if (pile.length > 1) {
+      const groupe = L.marker([pile[0].lat, pile[0].lng], { icon: L.divIcon({ className: '', html: `<div class="pile-carte">${pile.length}</div>`, iconSize: [34, 34] }) });
+      groupe.bindPopup(`<div class="pile-liste"><b>${pile.length} maisons au même point</b>${pile.map(m =>
+        `<button type="button" data-maison="${esc(m.id)}">${esc(adresseMaison(m))} — ${esc(m.nom)}</button>`).join('')}</div>`);
+      groupe.on('popupopen', (e) => {
+        e.popup.getElement().querySelectorAll('[data-maison]').forEach(b => {
+          b.onclick = () => { carte.closePopup(); ouvrirFicheMaison(b.dataset.maison); };
+        });
+      });
+      groupe.addTo(coucheMarqueurs);
+      pile.forEach(m => marqueursMaison.set(m.id, groupe));
+      points.push([pile[0].lat, pile[0].lng]);
+      continue;
+    }
+    const m = pile[0];
     const marqueur = L.circleMarker([m.lat, m.lng], {
       radius: 9, weight: 2, color: '#fff', fillOpacity: .95,
       fillColor: COULEURS[m.passage.statut] || COULEURS.autre
@@ -773,9 +798,22 @@ function afficherMarqueurs(cadrer) {
       bulle.querySelector('[data-a-cote]').onclick = () => { carte.closePopup(); ouvrirFicheMaison(null, m.id); };
     });
     marqueur.addTo(coucheMarqueurs);
+    marqueursMaison.set(m.id, marqueur);
     points.push([m.lat, m.lng]);
   }
   if (cadrer && points.length) carte.fitBounds(points, { padding: [40, 40], maxZoom: 17 });
+}
+
+function voirSurCarte(id) {
+  afficherVue('carte');
+  if (typeof L === 'undefined') return;
+  const m = trouverMaison(id);
+  setTimeout(() => {
+    const marqueur = marqueursMaison.get(id);
+    if (!marqueur) return;
+    carte.setView([m.lat, m.lng], Math.max(carte.getZoom(), 18));
+    marqueur.openPopup();
+  }, 120);
 }
 
 function meLocaliser() {
@@ -837,6 +875,7 @@ function initEvenements() {
       case 'statut': changerStatut(idMaison, cible.dataset.statut); break;
       case 'detail': ouvrirFicheMaison(idMaison); break;
       case 'a-cote': ouvrirFicheMaison(null, idMaison); break;
+      case 'voir-carte': voirSurCarte(idMaison); break;
       case 'nouvelle-maison': ouvrirFicheMaison(null); break;
       case 'valider-don': validerDon(); break;
       case 'enregistrer-maison': enregistrerMaison(); break;

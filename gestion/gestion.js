@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.5.0';
+const APP_VERSION = '0.6.0';
 const FORMAT_BASE = 'base-tournees-bozouls';
 const FORMAT_TOURNEE = 'tournee-bozouls';
 const FORMAT_RETOUR = 'retour-tournee-bozouls';
@@ -50,6 +50,7 @@ let voisineEditee = null;     // id de la maison à côté de laquelle on en ajo
 let gpsDialogue = null;       // { lat, lng, score, label } trouvé dans la fiche maison
 let retourEnCours = null;     // { retour, lignes }
 let carte = null, coucheCarte = null;
+const marqueursMaison = new Map();   // id de maison -> marqueur de la carte
 
 const FS_DISPONIBLE = 'showOpenFilePicker' in window;
 
@@ -565,7 +566,7 @@ function rendreMaisons() {
       </select></td>
       <td><input class="saisie-don" data-champ="don" inputmode="decimal" value="${p.statut === 'don' && p.don ? esc(String(p.don).replace('.', ',')) : ''}" /></td>
       <td><input data-champ="remarque" value="${esc(p.remarque || '')}" title="${esc(p.benevole ? 'Saisi par ' + p.benevole : '')}" /></td>
-      <td style="white-space:nowrap"><button class="btn-icone" data-action="ajouter-a-cote" title="Ajouter une maison à côté">➕</button><button class="btn-icone" data-action="modifier-maison" title="Fiche maison">✏️</button></td>
+      <td style="white-space:nowrap">${m.lat != null ? '<button class="btn-icone" data-action="voir-carte" title="Voir sur la carte">📍</button>' : ''}<button class="btn-icone" data-action="ajouter-a-cote" title="Ajouter une maison à côté">➕</button><button class="btn-icone" data-action="modifier-maison" title="Fiche maison">✏️</button></td>
     </tr>`;
   }
   $('maisons-corps').innerHTML = html ||
@@ -881,9 +882,10 @@ function rendreResultatsGps() {
 
 async function appelBan(parametres) {
   for (let essai = 0; essai < 4; essai++) {
-    const rep = await fetch(`https://api-adresse.data.gouv.fr/search/?${new URLSearchParams(parametres)}`);
-    if (rep.ok) return (await rep.json()).features || [];
-    if (rep.status !== 429 && rep.status < 500) break;
+    // Un refus pour trop de requêtes peut apparaître comme une erreur réseau : on retente aussi dans ce cas
+    const rep = await fetch(`https://api-adresse.data.gouv.fr/search/?${new URLSearchParams(parametres)}`).catch(() => null);
+    if (rep && rep.ok) return (await rep.json()).features || [];
+    if (rep && rep.status !== 429 && rep.status < 500) break;
     await new Promise(res => setTimeout(res, 1500 * (essai + 1)));   // service saturé : on patiente
   }
   throw new Error('Service d\'adresses indisponible');
@@ -912,7 +914,7 @@ async function chercherPosition(m, codes) {
   const code = m.commune ? await codeCommune(m.commune, codes) : '';
   const voie = redresserVoie(m.voie) || m.voie;
   const requetes = [[m.numero, voie || m.lieu].filter(Boolean).join(' ')];
-  if (voie && m.lieu) requetes.push(m.lieu);    // rue inconnue : on se rabat sur le hameau
+  if ((voie || m.numero) && m.lieu) requetes.push(m.lieu);    // rue ou numéro inconnu : on se rabat sur le hameau
   if (!code && m.commune) requetes[0] += ' ' + m.commune;
   for (const q of requetes) {
     if (q.trim().length < 3) continue;
@@ -988,18 +990,52 @@ function rendreCarte(cadrer) {
   }
   setTimeout(() => carte.invalidateSize(), 30);
   coucheCarte.clearLayers();
+  marqueursMaison.clear();
   const a = base.anneeCourante;
   const points = [];
-  for (const m of maisonsDe(tourneeActiveId)) {
+  // Les maisons placées sur un même point (rue, hameau) sont regroupées sous une pastille numérotée
+  const piles = new Map();
+  for (const m of trierMaisons(maisonsDe(tourneeActiveId))) {
     if (m.lat == null) continue;
-    const p = passage(m.id, a);
-    const mk = L.circleMarker([m.lat, m.lng], { radius: 8, weight: 2, color: '#fff', fillOpacity: .95, fillColor: COULEURS[p.statut] || COULEURS.autre });
-    mk.bindTooltip(`${esc(adresse(m))} — ${esc(m.nom)}<br>${esc(STATUTS[p.statut])}${p.statut === 'don' ? ' ' + euros(p.don) : ''}`);
-    mk.on('click', () => ouvrirDialogueMaison(m.id));
+    const k = m.lat.toFixed(5) + ',' + m.lng.toFixed(5);
+    if (!piles.has(k)) piles.set(k, []);
+    piles.get(k).push(m);
+  }
+  for (const pile of piles.values()) {
+    const { lat, lng } = pile[0];
+    let mk;
+    if (pile.length === 1) {
+      const m = pile[0], p = passage(m.id, a);
+      mk = L.circleMarker([lat, lng], { radius: 8, weight: 2, color: '#fff', fillOpacity: m.posApprochee ? .55 : .95, fillColor: COULEURS[p.statut] || COULEURS.autre });
+      mk.bindTooltip(`${esc(adresse(m))} — ${esc(m.nom)}<br>${esc(STATUTS[p.statut])}${p.statut === 'don' ? ' ' + euros(p.don) : ''}`);
+      mk.on('click', () => ouvrirDialogueMaison(m.id));
+    } else {
+      mk = L.marker([lat, lng], { icon: L.divIcon({ className: '', html: `<div class="pile-carte">${pile.length}</div>`, iconSize: [30, 30] }) });
+      mk.bindPopup(`<div class="pile-liste"><b>${pile.length} maisons au même point</b>${pile.map(m =>
+        `<button type="button" data-maison="${esc(m.id)}"><span class="pastille" style="background:${COULEURS[passage(m.id, a).statut] || COULEURS.autre}"></span>${esc(adresse(m))} — ${esc(m.nom)}</button>`).join('')}</div>`);
+      // Leaflet bloque la propagation des clics dans les popups : écouteurs directs
+      mk.on('popupopen', (e) => {
+        e.popup.getElement().querySelectorAll('[data-maison]').forEach(b => {
+          b.onclick = () => { carte.closePopup(); ouvrirDialogueMaison(b.dataset.maison); };
+        });
+      });
+    }
     mk.addTo(coucheCarte);
-    points.push([m.lat, m.lng]);
+    pile.forEach(m => marqueursMaison.set(m.id, mk));
+    points.push([lat, lng]);
   }
   if (cadrer && points.length) carte.fitBounds(points, { padding: [30, 30], maxZoom: 17 });
+}
+
+function voirSurCarte(id) {
+  afficherVueTournee('carte');
+  const m = maison(id);
+  setTimeout(() => {
+    const mk = marqueursMaison.get(id);
+    if (!mk) return;
+    carte.setView([m.lat, m.lng], Math.max(carte.getZoom(), 18));
+    if (mk.getPopup()) mk.openPopup(); else mk.openTooltip();
+  }, 120);
 }
 
 // ============================================================
@@ -1706,6 +1742,7 @@ async function action(nom, cible) {
     case 'nouvelle-maison': ouvrirDialogueMaison(null); break;
     case 'modifier-maison': ouvrirDialogueMaison(cible.closest('tr[data-id]').dataset.id); break;
     case 'ajouter-a-cote': ouvrirDialogueMaison(null, cible.closest('tr[data-id]').dataset.id); break;
+    case 'voir-carte': voirSurCarte(cible.closest('tr[data-id]').dataset.id); break;
     case 'enregistrer-maison': enregistrerMaison(); break;
     case 'supprimer-maison': supprimerMaison(); break;
     case 'geocoder-maison': geocoderMaisonDialogue(); break;
@@ -1801,6 +1838,7 @@ function initEvenements() {
 // DÉMARRAGE
 // ============================================================
 async function init() {
+  $('version-entete').textContent = 'v' + APP_VERSION;
   initEvenements();
   $('avertissement-navigateur').hidden = FS_DISPONIBLE;
   let copie = null, handle = null;
