@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.10.0';
+const APP_VERSION = '0.11.0';
 const FORMAT_BASE = 'base-tournees-bozouls';
 const FORMAT_TOURNEE = 'tournee-bozouls';
 const FORMAT_RETOUR = 'retour-tournee-bozouls';
@@ -51,7 +51,7 @@ let gpsDialogue = null;       // { lat, lng, score, label } trouvé dans la fich
 let retourEnCours = null;     // { retour, lignes }
 let carte = null, coucheCarte = null;
 const marqueursMaison = new Map();   // id de maison -> marqueur de la carte
-const selectionPlacement = new Set();   // maisons sans position cochées dans la liste
+const selectionPlacement = new Set();   // maisons cochées dans la liste pour être placées ensemble
 let placement = null;                // placement à la main en cours : { ids, groupe, repere, auClic }
 const LIBELLE_GROUPE = 'Groupe placé à la main';
 const LIBELLE_MAISON = 'Placée à la main';
@@ -537,10 +537,16 @@ function sansPosition(m) {
   return m.lat == null && m.etat !== 'disparue';
 }
 
+// Une position exacte n'est jamais sélectionnable : elle ne peut bouger que maison par maison
+function placable(m) {
+  return m.etat !== 'disparue' && (m.lat == null || m.posApprochee);
+}
+
 function correspondFiltres(m, a) {
   if (filtreStatut) {
     if (filtreStatut === 'nouvelle') { if (!m.nouvelle) return false; }
     else if (filtreStatut === 'sans_position') { if (!sansPosition(m)) return false; }
+    else if (filtreStatut === 'approchee') { if (m.lat == null || !m.posApprochee) return false; }
     else if (passage(m.id, a).statut !== filtreStatut) return false;
   }
   if (!rechercheMaison) return true;
@@ -564,7 +570,7 @@ function rendreMaisons() {
     const etiquettes = (m.etat !== 'habitee' ? ` <span class="etiquette">${esc(ETATS[m.etat] || m.etat)}</span>` : '') +
                        (m.nouvelle ? ' <span class="etiquette etiquette-nouvelle">Nouvelle — à valider</span>' : '');
     html += `<tr data-id="${esc(m.id)}" class="${estConcernee(m) ? '' : 'inactive'}">
-      <td>${sansPosition(m) ? `<input type="checkbox" class="choix-placement" title="Sélectionner pour placer sur la carte"${selectionPlacement.has(m.id) ? ' checked' : ''} />` : ''}</td>
+      <td>${placable(m) ? `<input type="checkbox" class="choix-placement" title="Sélectionner pour placer sur la carte"${selectionPlacement.has(m.id) ? ' checked' : ''} />` : ''}</td>
       <td class="num">${n}</td>
       <td>${esc(m.numero)}</td>
       <td>${esc(m.voie)}${m.lat == null ? ' <span title="Pas de position GPS">📍?</span>' : (m.posApprochee ? ' <span title="Position approchée (rue, hameau ou voisine)">≈</span>' : '')}</td>
@@ -585,16 +591,16 @@ function rendreMaisons() {
   rendreSelection();
 }
 
-// Sélection multiple des maisons sans position, pour les pré-positionner ensemble
-function maisonsSansPositionVisibles() {
-  return maisonsDe(tourneeActiveId).filter(m => sansPosition(m) && correspondFiltres(m, base.anneeCourante));
+// Sélection multiple des maisons sans position ou à position approchée, pour les placer ensemble
+function maisonsPlacablesVisibles() {
+  return maisonsDe(tourneeActiveId).filter(m => placable(m) && correspondFiltres(m, base.anneeCourante));
 }
 
 function rendreSelection() {
-  const visibles = maisonsSansPositionVisibles();
+  const visibles = maisonsPlacablesVisibles();
   const n = selectionPlacement.size;
   $('barre-selection').hidden = visibles.length === 0 && n === 0;
-  $('selection-texte').textContent = n ? `${n} maison(s) sélectionnée(s)` : `${visibles.length} maison(s) sans position`;
+  $('selection-texte').textContent = n ? `${n} maison(s) sélectionnée(s)` : `${visibles.length} maison(s) à placer (sans position ou ≈)`;
   $('btn-tout-cocher').textContent = `Tout cocher (${visibles.length})`;
   $('btn-tout-cocher').hidden = visibles.length === 0;
   $('btn-tout-decocher').hidden = n === 0;
@@ -602,13 +608,13 @@ function rendreSelection() {
 }
 
 function cocherTout(cocher) {
-  if (cocher) maisonsSansPositionVisibles().forEach(m => selectionPlacement.add(m.id));
+  if (cocher) maisonsPlacablesVisibles().forEach(m => selectionPlacement.add(m.id));
   else selectionPlacement.clear();
   rendreMaisons();
 }
 
 function placerSelection() {
-  const ids = [...selectionPlacement].filter(id => maison(id) && sansPosition(maison(id)));
+  const ids = [...selectionPlacement].filter(id => maison(id) && placable(maison(id)));
   if (!ids.length) return;
   demarrerPlacement(ids[0], { ids, titre: 'Sélection' });
 }
@@ -1968,7 +1974,8 @@ function initEvenements() {
   $('filtre-statut').innerHTML = '<option value="">Tous les statuts</option>' +
     Object.entries(STATUTS).map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join('') +
     '<option value="nouvelle">Nouvelles à valider</option>' +
-    '<option value="sans_position">Sans position</option>';
+    '<option value="sans_position">Sans position</option>' +
+    '<option value="approchee">Position approchée (≈)</option>';
   $('filtre-statut').addEventListener('change', (e) => { filtreStatut = e.target.value; rendreMaisons(); });
 
   $('retour-tout').addEventListener('change', (e) => {
