@@ -40,6 +40,7 @@
     <nav class="onglets">
       <button class="onglet actif" data-ecran="tableau">📊 Tableau de bord</button>
       <button class="onglet" data-ecran="tournee">📋 Tournée</button>
+      <button class="onglet" data-ecran="global">🗺️ Toutes les tournées</button>
     </nav>
     <div class="entete-actions">
       <button class="btn" data-action="importer-retour">📥 Importer un retour</button>
@@ -74,6 +75,28 @@
           </thead>
           <tbody id="tableau-corps"></tbody>
         </table>
+      </section>
+
+      <!-- Carte de toutes les tournées -->
+      <section id="ecran-global" class="ecran" hidden>
+        <div class="global-barre">
+          <button class="btn" data-action="global-rectangle" id="btn-global-rectangle">▭ Sélectionner une zone</button>
+          <span id="global-selection" class="global-selection"></span>
+          <button class="btn" data-action="global-vider" id="btn-global-vider">Tout décocher</button>
+          <select id="global-cible"></select>
+          <button class="btn btn-primaire" data-action="global-deplacer" id="btn-global-deplacer">🔀 Déplacer</button>
+          <button class="btn" data-action="global-annuler" id="btn-global-annuler">↩ Annuler le dernier déplacement</button>
+        </div>
+        <div class="global-corps">
+          <aside class="global-legende">
+            <div class="global-legende-actions">
+              <button class="btn" data-action="global-tout-afficher">Tout afficher</button>
+              <button class="btn" data-action="global-tout-masquer">Tout masquer</button>
+            </div>
+            <ul id="global-legende"></ul>
+          </aside>
+          <div id="carte-globale"></div>
+        </div>
       </section>
 
       <!-- Fiche tournée -->

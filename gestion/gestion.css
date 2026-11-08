@@ -190,6 +190,28 @@ h3 { font-size: 14px; margin-top: 12px; color: var(--texte-2); }
 .historique-maison { padding: 8px 0; border-bottom: 1px solid #eef1f4; }
 .historique-maison ul { list-style: none; margin-top: 4px; padding-left: 12px; display: grid; gap: 2px; font-size: 13px; }
 
+/* ---------- Carte de toutes les tournées ---------- */
+.global-barre { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.global-barre select { padding: 7px; border: 1px solid var(--bordure); border-radius: 8px; background: #fff; max-width: 220px; }
+.global-selection { font-weight: 600; flex: 1; min-width: 150px; }
+.btn.actif { background: var(--texte); color: #fff; border-color: var(--texte); }
+.global-corps { display: grid; grid-template-columns: 290px 1fr; gap: 10px; height: calc(100vh - 190px); min-height: 420px; }
+.global-legende { background: var(--carte); border-radius: var(--rayon); box-shadow: var(--ombre); overflow-y: auto; padding: 8px; }
+.global-legende-actions { display: flex; gap: 6px; margin-bottom: 6px; }
+.global-legende-actions .btn { flex: 1; padding: 5px; font-size: 12px; }
+.global-legende ul { list-style: none; }
+.global-legende label { display: flex; gap: 6px; align-items: flex-start; padding: 5px 2px; border-bottom: 1px solid #eef1f4; cursor: pointer; }
+.global-legende .pastille { margin-top: 3px; flex-shrink: 0; }
+.global-legende .nom { font-weight: 600; font-size: 13px; }
+.global-legende .sous { display: block; font-size: 11px; color: var(--texte-2); font-weight: 400; }
+#carte-globale { border-radius: var(--rayon); box-shadow: var(--ombre); }
+#carte-globale.mode-rectangle, #carte-globale.mode-rectangle .leaflet-interactive { cursor: crosshair; }
+.pile-globale { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #fff; color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; text-shadow: 0 0 2px #000; box-shadow: var(--ombre); }
+.pile-globale.selection { border-color: #000; outline: 2px solid #000; }
+.global-popup { display: flex; flex-direction: column; gap: 3px; max-height: 240px; overflow-y: auto; min-width: 240px; }
+.global-popup label { display: flex; gap: 5px; align-items: center; font-size: 12px; cursor: pointer; }
+.global-popup .btn { padding: 3px 8px; font-size: 12px; }
+
 /* ---------- Toast ---------- */
 .toast {
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px);

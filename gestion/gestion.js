@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.15.0';
+const APP_VERSION = '0.16.0';
 const FORMAT_BASE = 'base-tournees-bozouls';
 const FORMAT_TOURNEE = 'tournee-bozouls';
 const FORMAT_RETOUR = 'retour-tournee-bozouls';
@@ -458,7 +458,9 @@ function afficherEcran(nom) {
   document.querySelectorAll('.onglet').forEach(b => b.classList.toggle('actif', b.dataset.ecran === nom));
   $('ecran-tableau').hidden = nom !== 'tableau';
   $('ecran-tournee').hidden = nom !== 'tournee';
+  $('ecran-global').hidden = nom !== 'global';
   if (nom === 'tableau') rendreTableauDeBord();
+  else if (nom === 'global') { rendreListeTournees(); rendreGlobal(); }
   else rendreTournee();
 }
 
@@ -1885,6 +1887,216 @@ function enregistrerLieux() {
 }
 
 // ============================================================
+// CARTE DE TOUTES LES TOURNÉES ET RÉATTRIBUTION DE MAISONS
+// ============================================================
+const PALETTE_TOURNEES = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#00a5a5', '#f032e6', '#7a9a01',
+  '#9a6324', '#800000', '#808000', '#000075', '#d4a017', '#2f4f4f', '#ff6f91', '#5c7cfa', '#2b8a3e', '#a61e4d', '#495057', '#0b7285'];
+let carteGlobale = null, coucheGlobale = null;
+let modeRectangle = false, traceRectangle = null, finRectangleLe = 0;
+const selectionGlobale = new Set();
+const tourneesMasquees = new Set();
+
+function tourneesTriees() {
+  return [...base.tournees].sort((x, y) => (x.ordre || 0) - (y.ordre || 0) || normaliser(x.nom).localeCompare(normaliser(y.nom)));
+}
+
+function couleurTournee(id) {
+  return PALETTE_TOURNEES[tourneesTriees().findIndex(t => t.id === id) % PALETTE_TOURNEES.length] || '#888';
+}
+
+function maisonsGlobales() {
+  return base.maisons.filter(m => m.lat != null && m.etat !== 'disparue' && !tourneesMasquees.has(m.tourneeId));
+}
+
+function rendreGlobal(cadrer = true) {
+  const a = base.anneeCourante;
+  const cible = $('global-cible').value;
+  const tournees = tourneesTriees();
+  $('global-legende').innerHTML = tournees.map(t => {
+    const s = statsTournee(t.id, a);
+    const sans = maisonsDe(t.id).filter(sansPosition).length;
+    return `<li><label>
+      <input type="checkbox" data-legende="${esc(t.id)}"${tourneesMasquees.has(t.id) ? '' : ' checked'} />
+      <span class="pastille" style="background:${couleurTournee(t.id)}"></span>
+      <span class="nom">${esc(t.nom)}<span class="sous">${s.maisons} maisons · ${s.commande} calendriers${sans ? ` · ${sans} sans position` : ''}</span></span>
+    </label></li>`;
+  }).join('');
+  $('global-cible').innerHTML = '<option value="">Vers la tournée…</option>' +
+    tournees.map(t => `<option value="${esc(t.id)}">${esc(t.nom)}</option>`).join('');
+  $('global-cible').value = cible;
+  rendreBarreGlobale();
+  rendreCarteGlobale(cadrer);
+}
+
+function rendreBarreGlobale() {
+  const n = selectionGlobale.size;
+  $('global-selection').textContent = n ? `${n} maison(s) sélectionnée(s)` : 'Cliquez une maison, ou sélectionnez une zone';
+  $('btn-global-vider').hidden = n === 0;
+  $('btn-global-deplacer').disabled = n === 0;
+  $('btn-global-annuler').hidden = !base.dernierDeplacement;
+  $('btn-global-rectangle').classList.toggle('actif', modeRectangle);
+}
+
+function creerCarteGlobale() {
+  carteGlobale = L.map('carte-globale', { preferCanvas: true, boxZoom: false }).setView([44.47, 2.72], 12);
+  const plan = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(carteGlobale);
+  const aerienne = L.tileLayer(URL_VUE_AERIENNE, { maxZoom: 19, attribution: '© IGN' });
+  L.control.layers({ 'Plan': plan, 'Vue aérienne': aerienne }, null, { collapsed: false, position: 'bottomleft' }).addTo(carteGlobale);
+  coucheGlobale = L.layerGroup().addTo(carteGlobale);
+
+  // Sélection d'une zone : tracer un rectangle à la souris
+  carteGlobale.on('mousedown', (e) => {
+    if (!modeRectangle) return;
+    traceRectangle = L.rectangle([e.latlng, e.latlng], { color: '#1f5fbf', weight: 1, fillOpacity: .12, interactive: false }).addTo(carteGlobale);
+    traceRectangle.depart = e.latlng;
+  });
+  carteGlobale.on('mousemove', (e) => {
+    if (traceRectangle) traceRectangle.setBounds(L.latLngBounds(traceRectangle.depart, e.latlng));
+  });
+  document.addEventListener('mouseup', () => {
+    if (!traceRectangle) return;
+    const zone = traceRectangle.getBounds();
+    carteGlobale.removeLayer(traceRectangle);
+    traceRectangle = null;
+    const coin1 = carteGlobale.latLngToContainerPoint(zone.getNorthWest()), coin2 = carteGlobale.latLngToContainerPoint(zone.getSouthEast());
+    if (coin1.distanceTo(coin2) < 8) return;     // simple clic : pas une zone
+    finRectangleLe = Date.now();
+    maisonsGlobales().filter(m => zone.contains([m.lat, m.lng])).forEach(m => selectionGlobale.add(m.id));
+    rendreBarreGlobale();
+    rendreCarteGlobale(false);
+  });
+}
+
+function rendreCarteGlobale(cadrer) {
+  if (typeof L === 'undefined') { $('carte-globale').textContent = 'Carte indisponible (pas de connexion).'; return; }
+  const premiere = !carteGlobale;
+  if (premiere) creerCarteGlobale();
+  setTimeout(() => carteGlobale.invalidateSize(), 30);
+  coucheGlobale.clearLayers();
+  const piles = new Map();
+  for (const m of maisonsGlobales()) {
+    const k = m.lat.toFixed(5) + ',' + m.lng.toFixed(5);
+    if (!piles.has(k)) piles.set(k, []);
+    piles.get(k).push(m);
+  }
+  const points = [];
+  for (const pile of piles.values()) {
+    const ll = [pile[0].lat, pile[0].lng];
+    points.push(ll);
+    (pile.length === 1 ? marqueurGlobalSimple(pile[0], ll) : marqueurGlobalPile(pile, ll)).addTo(coucheGlobale);
+  }
+  if ((cadrer && premiere) && points.length) carteGlobale.fitBounds(points, { padding: [20, 20], animate: false });
+}
+
+function nomTournee(id) {
+  const t = tournee(id);
+  return t ? t.nom : '';
+}
+
+function marqueurGlobalSimple(m, ll) {
+  const choisie = selectionGlobale.has(m.id);
+  const mk = L.circleMarker(ll, { radius: choisie ? 8 : 6, weight: choisie ? 3 : 1, color: choisie ? '#000' : '#fff', fillOpacity: .95, fillColor: couleurTournee(m.tourneeId) });
+  mk.bindTooltip(`${esc(adresse(m))} — ${esc(m.nom)}<br>${esc(nomTournee(m.tourneeId))}`);
+  mk.on('click', () => {
+    if (Date.now() - finRectangleLe < 300) return;
+    if (choisie) selectionGlobale.delete(m.id); else selectionGlobale.add(m.id);
+    rendreBarreGlobale();
+    rendreCarteGlobale(false);
+  });
+  return mk;
+}
+
+function marqueurGlobalPile(pile, ll) {
+  // Pastille partagée entre les couleurs des tournées présentes à ce point
+  const parTournee = new Map();
+  pile.forEach(m => parTournee.set(m.tourneeId, (parTournee.get(m.tourneeId) || 0) + 1));
+  let cumul = 0;
+  const parts = [...parTournee.entries()].map(([id, nb]) => {
+    const debut = cumul;
+    cumul += nb / pile.length * 100;
+    return `${couleurTournee(id)} ${debut}% ${cumul}%`;
+  });
+  const nbChoisies = pile.filter(m => selectionGlobale.has(m.id)).length;
+  const mk = L.marker(ll, {
+    bubblingMouseEvents: true,
+    icon: L.divIcon({ className: '', iconSize: [26, 26], html: `<div class="pile-globale${nbChoisies ? ' selection' : ''}" style="background:conic-gradient(${parts.join(',')})">${nbChoisies ? `${nbChoisies}/` : ''}${pile.length}</div>` })
+  });
+  mk.bindPopup(`<div class="global-popup"><b>${pile.length} maisons au même point</b>
+    <button type="button" class="btn" data-tout>Tout cocher / décocher</button>
+    ${trierMaisons(pile).map(m => `<label><input type="checkbox" data-maison="${esc(m.id)}"${selectionGlobale.has(m.id) ? ' checked' : ''} />
+      <span class="pastille" style="background:${couleurTournee(m.tourneeId)}"></span>${esc(adresse(m))} — ${esc(m.nom)}</label>`).join('')}</div>`);
+  let modifie = false;
+  mk.on('popupopen', (e) => {
+    if (Date.now() - finRectangleLe < 300) { mk.closePopup(); return; }
+    const bulle = e.popup.getElement();
+    const cases = [...bulle.querySelectorAll('[data-maison]')];
+    const appliquer = (c) => {
+      if (c.checked) selectionGlobale.add(c.dataset.maison); else selectionGlobale.delete(c.dataset.maison);
+      modifie = true;
+      rendreBarreGlobale();
+    };
+    cases.forEach(c => { c.onchange = () => appliquer(c); });
+    bulle.querySelector('[data-tout]').onclick = () => {
+      const cocher = cases.some(c => !c.checked);
+      cases.forEach(c => { c.checked = cocher; appliquer(c); });
+    };
+  });
+  mk.on('popupclose', () => { if (modifie) setTimeout(() => rendreCarteGlobale(false), 0); });
+  return mk;
+}
+
+function basculerRectangle() {
+  modeRectangle = !modeRectangle;
+  if (carteGlobale) carteGlobale.dragging[modeRectangle ? 'disable' : 'enable']();
+  $('carte-globale').classList.toggle('mode-rectangle', modeRectangle);
+  rendreBarreGlobale();
+}
+
+function deplacerSelection() {
+  const cible = $('global-cible').value;
+  if (!cible) { alert('Choisissez la tournée d\'arrivée.'); $('global-cible').focus(); return; }
+  const aDeplacer = [...selectionGlobale].map(maison).filter(m => m && m.tourneeId !== cible);
+  if (!aDeplacer.length) { toast('Ces maisons sont déjà dans cette tournée.'); return; }
+  const parSource = new Map();
+  aDeplacer.forEach(m => parSource.set(m.tourneeId, (parSource.get(m.tourneeId) || 0) + 1));
+  const detail = [...parSource.entries()].map(([id, nb]) => `  • ${nomTournee(id)} : ${nb}`).join('\n');
+  if (!confirm(`Déplacer ${aDeplacer.length} maison(s) vers « ${nomTournee(cible)} » ?\n\n${detail}\n\nElles seront placées à la suite de cette tournée, avec leur historique.`)) return;
+
+  base.dernierDeplacement = {
+    le: maintenant(), cible,
+    maisons: aDeplacer.map(m => ({ id: m.id, tourneeId: m.tourneeId, ordreLieu: m.ordreLieu, voisineId: m.voisineId || '', cote: m.cote || 'apres' }))
+  };
+  // À la suite de la tournée d'arrivée, en gardant l'ordre de passage relatif des maisons déplacées
+  const dernier = Math.max(0, ...maisonsDe(cible).map(m => m.ordreLieu || 0));
+  const groupes = [...new Set(trierMaisons(aDeplacer).map(m => `${m.tourneeId}|${m.ordreLieu}`))];
+  for (const m of aDeplacer) {
+    const rang = groupes.indexOf(`${m.tourneeId}|${m.ordreLieu}`);
+    m.tourneeId = cible;
+    m.ordreLieu = dernier + 1 + rang;
+    m.voisineId = '';
+  }
+  journaliser('deplacement', `${aDeplacer.length} maison(s) déplacée(s) vers ${nomTournee(cible)}`, cible);
+  selectionGlobale.clear();
+  enregistrer();
+  rendreTout();
+  toast('🔀 Maisons déplacées : pensez à régénérer les fichiers terrain');
+}
+
+function annulerDeplacement() {
+  const d = base.dernierDeplacement;
+  if (!d || !confirm(`Annuler le dernier déplacement (${d.maisons.length} maison(s) vers « ${nomTournee(d.cible)} ») ?`)) return;
+  d.maisons.forEach(x => {
+    const m = maison(x.id);
+    if (m) Object.assign(m, { tourneeId: x.tourneeId, ordreLieu: x.ordreLieu, voisineId: x.voisineId, cote: x.cote });
+  });
+  journaliser('deplacement', `Déplacement annulé (${d.maisons.length} maison(s))`, d.cible);
+  delete base.dernierDeplacement;
+  enregistrer();
+  rendreTout();
+  toast('↩ Déplacement annulé');
+}
+
+// ============================================================
 // RECHERCHE DANS L'HISTORIQUE DES CHANGEMENTS
 // ============================================================
 const NB_MAX_HISTORIQUE = 50;
@@ -1943,7 +2155,7 @@ function changerAnnee(delta) {
 function ouvrirMenuBase() {
   $('base-etat').textContent = `${base.tournees.length} tournée(s), ${base.maisons.length} maison(s), ${base.passages.length} passage(s). ` +
     (fichier ? `Fichier : ${fichier.name}.` : 'Aucun fichier lié.') + ` Version ${APP_VERSION}.`;
-  const libelles = { envoi: '📤', retour: '📥', import: '📦', campagne: '🗓', geocodage: '🌍', suppression: '🗑', copie: '⬇' };
+  const libelles = { envoi: '📤', retour: '📥', import: '📦', campagne: '🗓', geocodage: '🌍', suppression: '🗑', copie: '⬇', deplacement: '🔀' };
   $('base-journal').innerHTML = base.journal.slice(-40).reverse().map(j => {
     const t = j.tourneeId ? tournee(j.tourneeId) : null;
     const detail = typeof j.detail === 'object' && j.detail
@@ -2014,6 +2226,12 @@ async function action(nom, cible) {
     case 'ouvrir-gps': document.querySelectorAll('dialog[open]').forEach(d => d.close()); ouvrirGps(null); break;
     case 'appliquer-rues': appliquerRues(); break;
     case 'annuler-manuel': annulerManuel(Number(cible.dataset.i)); break;
+    case 'global-rectangle': basculerRectangle(); break;
+    case 'global-vider': selectionGlobale.clear(); rendreBarreGlobale(); rendreCarteGlobale(false); break;
+    case 'global-deplacer': deplacerSelection(); break;
+    case 'global-annuler': annulerDeplacement(); break;
+    case 'global-tout-afficher': tourneesMasquees.clear(); rendreGlobal(false); break;
+    case 'global-tout-masquer': base.tournees.forEach(t => tourneesMasquees.add(t.id)); selectionGlobale.clear(); rendreGlobal(false); break;
     case 'ouvrir-historique': document.querySelectorAll('dialog[open]').forEach(d => d.close()); ouvrirHistorique(); break;
     case 'tout-cocher': cocherTout(true); break;
     case 'tout-decocher': cocherTout(false); break;
@@ -2043,6 +2261,17 @@ function initEvenements() {
   });
 
   $('historique-recherche').addEventListener('input', rendreHistorique);
+  $('global-legende').addEventListener('change', (e) => {
+    const id = e.target.dataset.legende;
+    if (!id) return;
+    if (e.target.checked) tourneesMasquees.delete(id);
+    else {
+      tourneesMasquees.add(id);
+      maisonsDe(id).forEach(m => selectionGlobale.delete(m.id));   // une maison masquée ne reste pas sélectionnée
+    }
+    rendreBarreGlobale();
+    rendreCarteGlobale(false);
+  });
   $('maisons-corps').addEventListener('change', saisieTableau);
   $('maisons-corps').addEventListener('change', (e) => {
     if (!e.target.classList.contains('choix-placement')) return;
