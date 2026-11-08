@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.2.8';
+const APP_VERSION = '0.3.1';
 const CLE_STOCKAGE = 'tournee_terrain_v2';
 const CLE_BENEVOLE = 'tournee_terrain_benevole';
 const CLE_MISE_A_JOUR = 'tournee_terrain_maj';
@@ -22,7 +22,14 @@ const STATUTS = {
   sans_don:      { libelle: 'Passé sans don', court: 'Sans don' },
   autre:        { libelle: 'Autre',      court: 'Autre' }
 };
-const ACTIONS_RAPIDES = ['don', 'absent', 'repasser', 'boite_lettres', 'refuse'];
+// Boutons des maisons : un statut de passage, ou un état de maison (Absent et Refus restent dans la fiche)
+const ACTIONS_RAPIDES = [
+  { statut: 'don' },
+  { etat: 'inhabitee', libelle: 'Inhabitée' },
+  { statut: 'repasser' },
+  { statut: 'boite_lettres' },
+  { etat: 'secondaire', libelle: 'Secondaire' }
+];
 const ETATS = {
   habitee:   'Habitée',
   inhabitee: 'Inhabitée / vide',
@@ -210,6 +217,7 @@ function preparerMaison(m) {
     posApprochee: !!m.posApprochee,
     creeLe: m.creeLe || '',
     changements: Array.isArray(m.changements) ? m.changements : [],
+    nbCalendriers: m.nbCalendriers != null ? Number(m.nbCalendriers) : undefined,
     passage: {
       statut: (m.passage && STATUTS[m.passage.statut]) ? m.passage.statut : 'a_visiter',
       don: lireMontant(m.passage && m.passage.don),
@@ -238,6 +246,8 @@ function importerTournee(donnees) {
           m.voie = l.voie;
           m.lieu = l.lieu;
           m.infos = l.infos;
+          m.nbCalendriers = l.nbCalendriers;
+          if (l.avantBouton) m.avantBouton = l.avantBouton;
           if (l.lat != null) { m.lat = l.lat; m.lng = l.lng; m.posApprochee = l.posApprochee; }
         }
         locales.delete(m.id);
@@ -340,7 +350,7 @@ function construireRetour() {
     maisons: modifiees.filter(m => !m.nouvelle).map(m => ({
       id: m.id, passage: m.passage, etat: m.etat, nom: m.nom, lat: m.lat, lng: m.lng,
       numero: m.numero, voie: m.voie, lieu: m.lieu, infos: m.infos, posApprochee: m.posApprochee,
-      changements: m.changements
+      changements: m.changements, nbCalendriers: m.nbCalendriers
     })),
     nouvelles: modifiees.filter(m => m.nouvelle).map(m => ({ ...m, aValider: true }))
   };
@@ -470,6 +480,42 @@ function changerStatut(id, statut) {
   afficherCompteurs();
   if (carte) afficherMarqueurs(false);
   toast(nouveau === 'a_visiter' ? '↩️ Annulé' : `✓ ${STATUTS[nouveau].libelle}`);
+}
+
+// Maison de nouveau occupée : 1 calendrier par défaut (les cas particuliers se règlent sur le PC)
+function remettreCalendrier(m, etaitVide) {
+  const vide = m.etat === 'inhabitee' || m.etat === 'disparue';
+  if (etaitVide && !vide && m.nbCalendriers === 0) m.nbCalendriers = 1;
+}
+
+// Boutons Inhabitée / Secondaire : passé sans don + état de la maison ; un 2e appui rétablit l'état précédent
+function basculerEtatRapide(id, etatCible) {
+  const m = trouverMaison(id);
+  if (!m) return;
+  const avant = { ...m.passage };
+  if (etatRapideActif(m, etatCible)) {
+    const s = m.avantBouton || { etat: 'habitee', nbCalendriers: m.nbCalendriers, statut: 'a_visiter' };
+    m.etat = s.etat;
+    m.nbCalendriers = s.nbCalendriers;
+    m.passage.statut = s.statut;
+    m.passage.don = s.don || 0;
+    delete m.avantBouton;
+  } else {
+    m.avantBouton = { etat: m.etat, nbCalendriers: m.nbCalendriers, statut: m.passage.statut, don: m.passage.don };
+    const etaitVide = m.etat === 'inhabitee' || m.etat === 'disparue';
+    m.etat = etatCible;
+    if (etatCible === 'inhabitee') m.nbCalendriers = 0;
+    else remettreCalendrier(m, etaitVide);
+    m.passage.statut = 'sans_don';
+    m.passage.don = 0;
+  }
+  m.passage.modifieLe = maintenant();
+  noterChangement(m, avant);
+  sauverEtat();
+  afficherListe();
+  afficherCompteurs();
+  if (carte) afficherMarqueurs(false);
+  toast(m.avantBouton ? `✓ ${ETATS[etatCible]}` : '↩️ Annulé');
 }
 
 function ouvrirFeuilleDon(id) {
@@ -631,7 +677,9 @@ function enregistrerMaison() {
 
   if (maisonEnCours) {
     const m = trouverMaison(maisonEnCours);
+    const etaitVide = m.etat === 'inhabitee' || m.etat === 'disparue';
     Object.assign(m, valeurs);
+    remettreCalendrier(m, etaitVide);
     const avant = m.passage;
     m.passage = passage;
     noterChangement(m, avant);
@@ -724,6 +772,17 @@ function correspondRecherche(m) {
   return [m.numero, m.voie, m.lieu, m.nom, m.commune, m.passage.remarque, m.infos].some(v => normaliser(v).includes(q));
 }
 
+function etatRapideActif(m, etatCible) {
+  return m.etat === etatCible && m.passage.statut === 'sans_don';
+}
+
+function boutonRapide(m, a) {
+  if (a.etat) {
+    return `<button class="action${etatRapideActif(m, a.etat) ? ' actif' : ''}" data-action="etat-rapide" data-etat="${a.etat}" data-statut="${a.etat}">${esc(a.libelle)}</button>`;
+  }
+  return `<button class="action${m.passage.statut === a.statut ? ' actif' : ''}" data-action="statut" data-statut="${a.statut}">${esc(STATUTS[a.statut].court)}</button>`;
+}
+
 function carteMaisonHTML(m) {
   const s = m.passage.statut;
   const h = dernierHistorique(m);
@@ -747,9 +806,7 @@ function carteMaisonHTML(m) {
         <button class="btn-detail" data-action="a-cote" aria-label="Ajouter une maison à côté">➕</button>
         <button class="btn-detail" data-action="detail" aria-label="Détail">✏️</button>
       </div>
-      ${inactive ? '' : `<div class="actions-rapides">
-        ${ACTIONS_RAPIDES.map(st => `<button class="action${s === st ? ' actif' : ''}" data-action="statut" data-statut="${st}">${esc(STATUTS[st].court)}</button>`).join('')}
-      </div>`}
+      ${m.etat === 'disparue' ? '' : `<div class="actions-rapides">${ACTIONS_RAPIDES.map(a => boutonRapide(m, a)).join('')}</div>`}
       ${remarque ? `<div class="maison-remarque">💬 ${esc(remarque)}</div>` : ''}
     </article>`;
 }
@@ -1055,6 +1112,7 @@ function initEvenements() {
       case 'ouvrir-fichier': $('fichier-tournee').click(); break;
       case 'charger-demo': chargerDemo(); break;
       case 'statut': changerStatut(idMaison, cible.dataset.statut); break;
+      case 'etat-rapide': basculerEtatRapide(idMaison, cible.dataset.etat); break;
       case 'detail': ouvrirFicheMaison(idMaison); break;
       case 'a-cote': ouvrirFicheMaison(null, idMaison); break;
       case 'voir-carte': voirSurCarte(idMaison); break;
