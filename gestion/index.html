@@ -245,6 +245,39 @@
   </form>
 </dialog>
 
+<!-- ======= FENÊTRE : RUES ET POSITIONS GPS ======= -->
+<dialog id="dlg-gps" class="fenetre fenetre-large">
+  <form method="dialog">
+    <h2 id="gps-titre">Rues et positions GPS</h2>
+    <div id="gps-rues-bloc">
+      <h3>1. Rues écrites à l'envers</h3>
+      <p class="discret">Cochez celles à corriger ; la proposition reste modifiable.</p>
+      <div class="retour-tableau" style="max-height:30vh">
+        <table class="tableau tableau-maisons">
+          <thead><tr><th></th><th>Actuel</th><th>Proposé</th><th class="num">Maisons</th></tr></thead>
+          <tbody id="gps-rues-corps"></tbody>
+        </table>
+      </div>
+      <div class="fenetre-actions"><button type="button" class="btn" data-action="appliquer-rues">✓ Corriger les rues cochées</button></div>
+    </div>
+    <h3 id="gps-etape">Positions GPS</h3>
+    <p class="discret">Seule l'adresse est envoyée à la Base Adresse Nationale, jamais le nom des habitants. Vos adresses ne sont pas modifiées.</p>
+    <p id="gps-resume"></p>
+    <div class="retour-tableau" style="max-height:30vh">
+      <table class="tableau">
+        <thead><tr><th>Tournée</th><th class="num" title="Numéro trouvé">✅ Numéro</th><th class="num" title="Position de la rue ou du hameau">🟡 Approchée</th><th class="num" title="Adresse non trouvée">🔴 Non trouvée</th><th class="num">À chercher</th></tr></thead>
+        <tbody id="gps-corps"></tbody>
+      </table>
+    </div>
+    <div class="fenetre-actions">
+      <button type="button" class="btn btn-primaire" data-action="lancer-gps" id="btn-lancer-gps">🌍 Chercher les positions</button>
+      <button type="button" class="btn" data-action="arreter-gps" id="btn-arreter-gps" hidden>⏹ Arrêter</button>
+      <span class="espace"></span>
+      <button type="button" class="btn" data-action="fermer-dialogue" id="btn-fermer-gps">Fermer</button>
+    </div>
+  </form>
+</dialog>
+
 <!-- ======= FENÊTRE : MENU BASE ======= -->
 <dialog id="dlg-base" class="fenetre">
   <form method="dialog">
@@ -256,6 +289,7 @@
       <button type="button" class="btn" data-action="exporter-csv">📊 Export Excel (CSV) de l'année</button>
       <button type="button" class="btn" data-action="importer-access">📥 Importer la liste Access (Excel)</button>
       <button type="button" class="btn" data-action="ouvrir-lieux">🏘 Communes et hameaux</button>
+      <button type="button" class="btn" data-action="ouvrir-gps">🌍 Rues et positions GPS</button>
       <button type="button" class="btn" data-action="importer-v1">📥 Importer une sauvegarde de l'ancienne application</button>
       <button type="button" class="btn" data-action="changer-base">📂 Ouvrir une autre base</button>
     </div>

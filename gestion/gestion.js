@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.4.0';
+const APP_VERSION = '0.5.0';
 const FORMAT_BASE = 'base-tournees-bozouls';
 const FORMAT_TOURNEE = 'tournee-bozouls';
 const FORMAT_RETOUR = 'retour-tournee-bozouls';
@@ -555,7 +555,7 @@ function rendreMaisons() {
     html += `<tr data-id="${esc(m.id)}" class="${estConcernee(m) ? '' : 'inactive'}">
       <td class="num">${n}</td>
       <td>${esc(m.numero)}</td>
-      <td>${esc(m.voie)}${m.lat == null ? ' <span title="Pas de position GPS">📍?</span>' : ''}</td>
+      <td>${esc(m.voie)}${m.lat == null ? ' <span title="Pas de position GPS">📍?</span>' : (m.posApprochee ? ' <span title="Position approchée (rue, hameau ou voisine)">≈</span>' : '')}</td>
       <td>${esc(m.nom)}${m.infos ? `<div class="discret" style="font-size:12px">ℹ️ ${esc(m.infos)}</div>` : ''}</td>
       <td>${etiquettes.trim() || '<span class="discret">Habitée</span>'}</td>
       <td class="num discret">${esc(texteHistorique(passage(m.id, a - 2)))}</td>
@@ -785,27 +785,187 @@ async function geocoderMaisonDialogue() {
   }
 }
 
-async function geocoderTournee() {
-  const aTraiter = maisonsDe(tourneeActiveId).filter(m => m.lat == null && m.etat !== 'disparue');
-  if (aTraiter.length === 0) { toast('Toutes les maisons ont déjà une position.'); return; }
-  if (!confirm(`Chercher la position de ${aTraiter.length} maison(s) dans la Base Adresse Nationale ?\n\nSeule l'adresse (sans nom) est envoyée. Les adresses saisies ne sont pas modifiées.`)) return;
-  let ok = 0, douteux = 0, echec = 0;
-  for (const [i, m] of aTraiter.entries()) {
-    toast(`🌍 ${i + 1} / ${aTraiter.length}…`);
-    try {
-      const r = await geocoder(m);
-      if (r && r.score >= 0.4) {
-        Object.assign(m, { lat: r.lat, lng: r.lng, geoScore: r.score, geoLabel: r.label });
-        ok++;
-        if (r.score < 0.6) douteux++;
-      } else echec++;
-    } catch (e) { echec++; }
-    await new Promise(res => setTimeout(res, 60));   // limite du service : 50 requêtes / seconde
+// ------------------------------------------------------------
+// Rues écrites à l'envers : « lacan ( rue jean ) » -> « Rue Jean Lacan »
+// ------------------------------------------------------------
+function casseTitre(texte) {
+  const petits = new Set(['de', 'du', 'des', 'la', 'le', 'les', 'et', 'au', 'aux', 'sur', 'en']);
+  return String(texte).toLowerCase().split(/\s+/).filter(Boolean).map((mot, i) =>
+    (i && petits.has(mot)) ? mot : mot.replace(/^([dl]')?(.)/, (x, prefixe, lettre) => (prefixe || '') + lettre.toUpperCase())
+  ).join(' ');
+}
+
+function redresserVoie(voie) {
+  const m = String(voie || '').match(/^(.*?)\s*\(\s*(.*?)\s*\)\s*$/);
+  if (!m || !m[1] || !m[2]) return null;
+  const tete = m[2];
+  if (normaliser(tete).includes(normaliser(m[1]))) return casseTitre(tete);   // « mars ( rue du 19 mars 1962 ) »
+  const nom = /\s/.test(tete) ? m[1] : m[1].replace(/^rue\s+/i, '');           // « Rue Adolphe Boisse (impasse) »
+  return casseTitre(`${tete} ${nom}`);
+}
+
+function ruesARedresser() {
+  const rues = new Map();
+  for (const m of base.maisons) {
+    const proposee = redresserVoie(m.voie);
+    if (!proposee) continue;
+    if (!rues.has(m.voie)) rues.set(m.voie, { voie: m.voie, proposee, nb: 0 });
+    rues.get(m.voie).nb++;
   }
-  journaliser('geocodage', `${ok} trouvées, ${echec} non trouvées`, tourneeActiveId);
+  return [...rues.values()].sort((a, b) => b.nb - a.nb);
+}
+
+function appliquerRues() {
+  let nb = 0;
+  document.querySelectorAll('#gps-rues-corps tr[data-voie]').forEach(tr => {
+    const proposee = tr.querySelector('[data-rue="proposee"]').value.trim();
+    if (!tr.querySelector('[data-rue="coche"]').checked || !proposee) return;
+    for (const m of base.maisons) {
+      if (m.voie === tr.dataset.voie) { m.voie = proposee; nb++; }
+    }
+  });
+  journaliser('import', `Rues remises à l'endroit : ${nb} maisons`);
   enregistrer();
-  rendreTournee();
-  alert(`Géocodage terminé :\n✓ ${ok} position(s) trouvée(s)${douteux ? ` (dont ${douteux} à vérifier sur la carte)` : ''}\n✗ ${echec} non trouvée(s) : à placer avec l'app terrain (« Je suis devant »).`);
+  rendreGps();
+  toast(`✓ ${nb} maisons corrigées`);
+}
+
+// ------------------------------------------------------------
+// Positions GPS : recherche limitée à la commune de chaque maison
+// ------------------------------------------------------------
+let gpsPortee = null;      // id de tournée, ou null pour toutes
+let gpsEnCours = false;
+let gpsArret = false;
+
+function maisonsGps() {
+  return (gpsPortee ? maisonsDe(gpsPortee) : base.maisons).filter(m => m.etat !== 'disparue');
+}
+
+function ouvrirGps(tourneeId) {
+  gpsPortee = tourneeId;
+  const t = tourneeId ? tournee(tourneeId) : null;
+  $('gps-titre').textContent = t ? `Positions GPS — ${t.nom}` : 'Rues et positions GPS';
+  rendreGps();
+  $('dlg-gps').showModal();
+}
+
+function rendreGps() {
+  const rues = ruesARedresser();
+  $('gps-rues-bloc').hidden = rues.length === 0;
+  $('gps-etape').textContent = rues.length ? '2. Positions GPS' : 'Positions GPS';
+  $('gps-rues-corps').innerHTML = rues.map(r => `<tr data-voie="${esc(r.voie)}">
+    <td><input type="checkbox" data-rue="coche" style="width:auto" checked /></td>
+    <td class="discret">${esc(r.voie)}</td>
+    <td><input data-rue="proposee" value="${esc(r.proposee)}" /></td>
+    <td class="num">${r.nb}</td></tr>`).join('');
+  rendreResultatsGps();
+}
+
+function rendreResultatsGps() {
+  const cases = new Map();
+  for (const m of maisonsGps()) {
+    if (!cases.has(m.tourneeId)) cases.set(m.tourneeId, { numero: 0, approchee: 0, aucune: 0, reste: 0 });
+    const c = cases.get(m.tourneeId);
+    if (m.lat != null) c[m.posApprochee ? 'approchee' : 'numero']++;
+    else if (m.geoNiveau === 'aucun') c.aucune++;
+    else c.reste++;
+  }
+  const lignes = [...cases.entries()].map(([id, c]) => ({ nom: tournee(id) ? tournee(id).nom : '', ...c }))
+    .sort((a, b) => normaliser(a.nom).localeCompare(normaliser(b.nom)));
+  $('gps-corps').innerHTML = lignes.map(c => `<tr><td>${esc(c.nom)}</td><td class="num">${c.numero}</td><td class="num">${c.approchee}</td><td class="num">${c.aucune}</td><td class="num">${c.reste}</td></tr>`).join('');
+  const somme = (k) => lignes.reduce((s, c) => s + c[k], 0);
+  if (!gpsEnCours) {
+    $('gps-resume').textContent = `✅ ${somme('numero')} au numéro · 🟡 ${somme('approchee')} approchées · 🔴 ${somme('aucune')} non trouvées · ${somme('reste')} à chercher.`;
+  }
+}
+
+async function appelBan(parametres) {
+  for (let essai = 0; essai < 4; essai++) {
+    const rep = await fetch(`https://api-adresse.data.gouv.fr/search/?${new URLSearchParams(parametres)}`);
+    if (rep.ok) return (await rep.json()).features || [];
+    if (rep.status !== 429 && rep.status < 500) break;
+    await new Promise(res => setTimeout(res, 1500 * (essai + 1)));   // service saturé : on patiente
+  }
+  throw new Error('Service d\'adresses indisponible');
+}
+
+async function codeCommune(commune, codes) {
+  const k = normaliser(commune);
+  if (!codes.has(k)) {
+    codes.set(k, appelBan({ q: commune, type: 'municipality', limit: 5, lat: BOZOULS.lat, lon: BOZOULS.lng }).then(liste => {
+      const f = liste.find(x => memeNom(x.properties.city, commune) && String(x.properties.citycode).startsWith('12'));
+      return f ? f.properties.citycode : '';
+    }));
+  }
+  return codes.get(k);
+}
+
+function niveauPosition(f, m) {
+  const p = f.properties;
+  if (p.type === 'housenumber') return parseInt(p.housenumber) === parseInt(m.numero) ? 'numero' : 'rue';
+  if (p.type === 'street') return 'rue';
+  if (p.type === 'locality') return 'lieu';
+  return memeNom(m.lieu || m.commune, p.city) ? 'lieu' : 'aucun';   // le centre d'une commune ne situe pas un hameau
+}
+
+async function chercherPosition(m, codes) {
+  const code = m.commune ? await codeCommune(m.commune, codes) : '';
+  const voie = redresserVoie(m.voie) || m.voie;
+  const requetes = [[m.numero, voie || m.lieu].filter(Boolean).join(' ')];
+  if (voie && m.lieu) requetes.push(m.lieu);    // rue inconnue : on se rabat sur le hameau
+  if (!code && m.commune) requetes[0] += ' ' + m.commune;
+  for (const q of requetes) {
+    if (q.trim().length < 3) continue;
+    const parametres = { q, limit: 1 };
+    if (code) parametres.citycode = code;
+    const f = (await appelBan(parametres))[0];
+    if (!f || f.properties.score < 0.5) continue;
+    const niveau = niveauPosition(f, m);
+    if (niveau !== 'aucun') return { f, niveau };
+  }
+  return null;
+}
+
+async function lancerGps() {
+  const aTraiter = maisonsGps().filter(m => m.lat == null);
+  if (!aTraiter.length) { toast('Toutes les maisons ont déjà une position.'); return; }
+  gpsEnCours = true;
+  gpsArret = false;
+  $('btn-lancer-gps').disabled = true;
+  $('btn-fermer-gps').disabled = true;
+  $('btn-arreter-gps').hidden = false;
+  const codes = new Map();
+  let suivant = 0, faites = 0, erreurs = 0;
+  const travailleur = async () => {
+    while (suivant < aTraiter.length && !gpsArret) {
+      const m = aTraiter[suivant++];
+      try {
+        const r = await chercherPosition(m, codes);
+        if (r) {
+          Object.assign(m, {
+            lat: r.f.geometry.coordinates[1], lng: r.f.geometry.coordinates[0], geoScore: r.f.properties.score,
+            geoLabel: r.f.properties.label, geoNiveau: r.niveau, posApprochee: r.niveau !== 'numero'
+          });
+        } else m.geoNiveau = 'aucun';
+      } catch (e) {
+        erreurs++;
+      }
+      faites++;
+      $('gps-resume').textContent = `🌍 ${faites} / ${aTraiter.length}…`;
+      if (faites % 100 === 0) { enregistrer(); rendreResultatsGps(); }
+      await new Promise(res => setTimeout(res, 120));   // limite du service : 50 requêtes / seconde
+    }
+  };
+  await Promise.all([travailleur(), travailleur(), travailleur(), travailleur()]);
+  gpsEnCours = false;
+  $('btn-lancer-gps').disabled = false;
+  $('btn-fermer-gps').disabled = false;
+  $('btn-arreter-gps').hidden = true;
+  journaliser('geocodage', `${faites} maisons traitées${erreurs ? `, ${erreurs} erreurs réseau` : ''}`, gpsPortee);
+  enregistrer();
+  rendreResultatsGps();
+  rendreTout();
+  if (erreurs) toast(`⚠️ ${erreurs} recherches n'ont pas abouti : relancez pour les reprendre`);
 }
 
 // ============================================================
@@ -1549,7 +1709,11 @@ async function action(nom, cible) {
     case 'enregistrer-maison': enregistrerMaison(); break;
     case 'supprimer-maison': supprimerMaison(); break;
     case 'geocoder-maison': geocoderMaisonDialogue(); break;
-    case 'geocoder-tournee': geocoderTournee(); break;
+    case 'geocoder-tournee': ouvrirGps(tourneeActiveId); break;
+    case 'ouvrir-gps': document.querySelectorAll('dialog[open]').forEach(d => d.close()); ouvrirGps(null); break;
+    case 'appliquer-rues': appliquerRues(); break;
+    case 'lancer-gps': lancerGps(); break;
+    case 'arreter-gps': gpsArret = true; break;
     case 'exporter-terrain': exporterTerrain(); break;
     case 'appliquer-retour': appliquerRetour(); break;
     case 'imprimer': imprimer(); break;
