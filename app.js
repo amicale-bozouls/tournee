@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.2.7';
+const APP_VERSION = '0.2.8';
 const CLE_STOCKAGE = 'tournee_terrain_v2';
 const CLE_BENEVOLE = 'tournee_terrain_benevole';
 const CLE_MISE_A_JOUR = 'tournee_terrain_maj';
@@ -55,6 +55,8 @@ function chargerEtat() {
   try {
     const brut = localStorage.getItem(CLE_STOCKAGE);
     etat = brut ? JSON.parse(brut) : null;
+    // Tournée chargée avant la version 0.2.7 : le champ n'existe pas encore sur ses maisons
+    if (etat && etat.maisons) etat.maisons.forEach(m => { if (!Array.isArray(m.changements)) m.changements = []; });
   } catch (e) {
     console.warn('Stockage illisible', e);
     etat = null;
