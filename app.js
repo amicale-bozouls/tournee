@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.2.3';
+const APP_VERSION = '0.2.4';
 const CLE_STOCKAGE = 'tournee_terrain_v2';
 const CLE_BENEVOLE = 'tournee_terrain_benevole';
 const CLE_MISE_A_JOUR = 'tournee_terrain_maj';
@@ -515,6 +515,9 @@ function ouvrirFicheMaison(id, voisineId = null) {
   $('m-cote-ligne').hidden = !voisine;
   $('m-cote').value = 'apres';
   $('btn-placer-carte').hidden = !m;
+  const hameau = m ? maisonsDuHameau(m) : [];
+  $('btn-placer-hameau').hidden = hameau.length < 2;
+  $('btn-placer-hameau').textContent = `🏘 Placer tout le hameau (${hameau.length})`;
   const historique = m ? (m.historique || []).slice().sort((a, b) => b.annee - a.annee)
     .map(h => `${h.annee} : ${h.statut === 'don' ? euros(h.don) : (STATUTS[h.statut] ? STATUTS[h.statut].libelle : h.statut)}`).join(' · ') : '';
   $('maison-historique').textContent = [m && m.infos, historique].filter(Boolean).join(' — ');
@@ -807,12 +810,19 @@ function afficherMarqueurs(cadrer) {
   for (const pile of piles.values()) {
     if (pile.length > 1) {
       const groupe = L.marker([pile[0].lat, pile[0].lng], { icon: L.divIcon({ className: '', html: `<div class="pile-carte">${pile.length}</div>`, iconSize: [34, 34] }) });
-      groupe.bindPopup(`<div class="pile-liste"><b>${pile.length} maisons au même point</b>${pile.map(m =>
+      const mobiles = pile.filter(m => m.posApprochee);
+      groupe.bindPopup(`<div class="pile-liste"><b>${pile.length} maisons au même point</b>${mobiles.length > 1 ? `<button type="button" class="pile-groupe" data-groupe>📌 Déplacer ce groupe (${mobiles.length})</button>` : ''}${pile.map(m =>
         `<button type="button" data-maison="${esc(m.id)}">${esc(adresseMaison(m))} — ${esc(m.nom)}</button>`).join('')}</div>`);
       groupe.on('popupopen', (e) => {
-        e.popup.getElement().querySelectorAll('[data-maison]').forEach(b => {
+        const bulle = e.popup.getElement();
+        bulle.querySelectorAll('[data-maison]').forEach(b => {
           b.onclick = () => { carte.closePopup(); ouvrirFicheMaison(b.dataset.maison); };
         });
+        const boutonGroupe = bulle.querySelector('[data-groupe]');
+        if (boutonGroupe) boutonGroupe.onclick = () => {
+          carte.closePopup();
+          demarrerPlacement(mobiles[0].id, { ids: mobiles.map(m => m.id), titre: mobiles[0].lieu || 'Groupe de maisons' });
+        };
       });
       groupe.addTo(coucheMarqueurs);
       pile.forEach(m => marqueursMaison.set(m.id, groupe));
@@ -841,7 +851,15 @@ function afficherMarqueurs(cadrer) {
 }
 
 // Placement à la main : un appui sur la carte ou un glisser du repère, puis validation
-function demarrerPlacement(id) {
+// Maisons d'un hameau qui peuvent bouger ensemble : les positions déjà exactes ne sont jamais déplacées
+function maisonsDuHameau(m) {
+  if (!m.lieu) return [];
+  return etat.maisons.filter(x => x.etat !== 'disparue' && (x.lat == null || x.posApprochee) &&
+    normaliser(x.commune) === normaliser(m.commune) && normaliser(x.lieu) === normaliser(m.lieu));
+}
+
+// groupe (facultatif) : { ids, titre } pour déplacer plusieurs maisons d'un coup
+function demarrerPlacement(id, groupe = null) {
   if (typeof L === 'undefined') { toast('Carte indisponible sans réseau'); return; }
   const m = trouverMaison(id);
   fermerFeuilles();
@@ -857,8 +875,10 @@ function demarrerPlacement(id) {
   }).addTo(carte);
   const auClic = (e) => repere.setLatLng(e.latlng);
   carte.on('click', auClic);
-  placement = { id, repere, auClic };
-  $('placement-texte').textContent = `${adresseMaison(m)} : touchez l'endroit de la maison ou faites glisser le repère.`;
+  placement = { ids: groupe ? groupe.ids : [id], groupe: !!groupe, repere, auClic };
+  $('placement-texte').textContent = groupe
+    ? `${groupe.titre} (${groupe.ids.length} maisons) : touchez l'endroit voulu ou faites glisser le repère.`
+    : `${adresseMaison(m)} : touchez l'endroit de la maison ou faites glisser le repère.`;
   $('placement-bandeau').hidden = false;
   document.querySelector('.fab').hidden = true;
   setTimeout(() => carte.setView(depart, Math.max(carte.getZoom(), 18)), 120);
@@ -874,18 +894,21 @@ function terminerPlacement() {
 }
 
 function validerPlacement() {
-  const m = trouverMaison(placement.id);
   const { lat, lng } = placement.repere.getLatLng();
-  m.lat = lat;
-  m.lng = lng;
-  m.posApprochee = false;
-  m.passage.modifieLe = maintenant();   // pour que la position parte avec le retour
+  const { ids, groupe } = placement;
+  for (const id of ids) {
+    const m = trouverMaison(id);
+    m.lat = lat;
+    m.lng = lng;
+    m.posApprochee = groupe;              // un groupe reste « approché » : chaque maison pourra être ajustée
+    m.passage.modifieLe = maintenant();   // pour que la position parte avec le retour
+  }
   terminerPlacement();
   sauverEtat();
   afficherMarqueurs(false);
   afficherListe();
   afficherCompteurs();
-  toast('📌 Position enregistrée');
+  toast(groupe ? `📌 ${ids.length} maisons déplacées` : '📌 Position enregistrée');
 }
 
 function voirSurCarte(id) {
@@ -961,6 +984,11 @@ function initEvenements() {
       case 'a-cote': ouvrirFicheMaison(null, idMaison); break;
       case 'voir-carte': voirSurCarte(idMaison); break;
       case 'placer-fiche': demarrerPlacement(maisonEnCours); break;
+      case 'placer-hameau': {
+        const m = trouverMaison(maisonEnCours);
+        demarrerPlacement(m.id, { ids: maisonsDuHameau(m).map(x => x.id), titre: m.lieu });
+        break;
+      }
       case 'valider-placement': validerPlacement(); break;
       case 'mettre-a-jour': mettreAJourApplication(); break;
       case 'annuler-placement': terminerPlacement(); afficherMarqueurs(false); break;

@@ -172,6 +172,7 @@ input, select, textarea { font: inherit; color: var(--texte); }
 .pile-carte { width: 34px; height: 34px; line-height: 30px; border-radius: 50%; background: var(--primaire); color: #fff; border: 2px solid #fff; text-align: center; font-weight: 700; font-size: 14px; box-shadow: var(--ombre); }
 .pile-liste { display: flex; flex-direction: column; gap: 4px; max-height: 45vh; overflow-y: auto; min-width: 200px; }
 .pile-liste button { border: none; background: #eef1f5; text-align: left; padding: 8px; border-radius: 8px; font-size: 14px; }
+.pile-liste .pile-groupe { background: var(--primaire); color: #fff; font-weight: 600; text-align: center; }
 
 /* ---------- Barre du bas + FAB ---------- */
 .barre-bas {
@@ -222,7 +223,7 @@ input, select, textarea { font: inherit; color: var(--texte); }
 .raccourcis button { min-height: 48px; border-radius: 10px; border: 1px solid var(--bordure); background: #fff; font-weight: 700; font-size: 16px; }
 .feuille-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
 .feuille-actions .btn { flex: 1; }
-.ligne-gps { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; color: var(--texte-2); }
+.ligne-gps { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; color: var(--texte-2); }
 .proposition { background: #eef4ff; border-radius: 10px; padding: 10px 12px; font-size: 14px; }
 .proposition button { margin-top: 6px; }
 .menu-liste { display: flex; flex-direction: column; gap: 10px; }

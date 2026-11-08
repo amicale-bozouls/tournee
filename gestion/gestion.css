@@ -156,6 +156,8 @@ h3 { font-size: 14px; margin-top: 12px; color: var(--texte-2); }
 }
 .placement span { flex: 1; }
 .repere-placement { font-size: 30px; line-height: 30px; text-align: center; }
+.pile-liste .pile-groupe { background: var(--primaire); color: #fff; font-weight: 600; text-align: center; padding: 6px; }
+.pile-liste .pile-groupe:hover { background: #194f9f; }
 .pile-ligne { display: flex; gap: 2px; align-items: center; }
 .pile-ligne button:first-child { flex: 1; }
 .pile-carte { width: 30px; height: 30px; line-height: 26px; border-radius: 50%; background: var(--primaire); color: #fff; border: 2px solid #fff; text-align: center; font-weight: 700; font-size: 13px; box-shadow: var(--ombre); }
