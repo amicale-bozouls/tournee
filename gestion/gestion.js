@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.1.0';
+const APP_VERSION = '0.3.0';
 const FORMAT_BASE = 'base-tournees-bozouls';
 const FORMAT_TOURNEE = 'tournee-bozouls';
 const FORMAT_RETOUR = 'retour-tournee-bozouls';
@@ -19,6 +19,7 @@ const STATUTS = {
   repasser:      'À repasser',
   boite_lettres: 'Boîte aux lettres',
   refuse:        'Refus',
+  sans_don:      'Passé sans don',
   autre:         'Autre'
 };
 const ETATS = {
@@ -29,7 +30,7 @@ const ETATS = {
 };
 const COULEURS = {
   a_visiter: '#8a94a3', don: '#1e8e3e', absent: '#d48a00', repasser: '#7b3fe4',
-  boite_lettres: '#0b7fa8', refuse: '#c62828', autre: '#4a5566'
+  boite_lettres: '#0b7fa8', refuse: '#c62828', sans_don: '#6b7480', autre: '#4a5566'
 };
 
 // ============================================================
@@ -217,8 +218,8 @@ function adresse(m) {
 
 function trierMaisons(liste) {
   return [...liste].sort((a, b) =>
+    (a.ordreLieu || 0) - (b.ordreLieu || 0) ||   // l'ordre de passage prime, même à cheval sur deux communes
     normaliser(a.commune).localeCompare(normaliser(b.commune)) ||
-    (a.ordreLieu || 0) - (b.ordreLieu || 0) ||
     normaliser(a.lieu).localeCompare(normaliser(b.lieu)) ||
     (a.ordreRue || 0) - (b.ordreRue || 0) ||
     normaliser(a.voie).localeCompare(normaliser(b.voie)) ||
@@ -228,15 +229,18 @@ function trierMaisons(liste) {
 
 function statsTournee(tourneeId, annee) {
   const maisons = maisonsDe(tourneeId).filter(estConcernee);
-  let faites = 0, dons = 0, total = 0, totalN1 = 0;
+  let faites = 0, dons = 0, total = 0, totalN1 = 0, calendriers = 0, secondaires = 0;
   for (const m of maisons) {
+    const nb = m.nbCalendriers ?? 1;
+    calendriers += nb;
+    if (m.etat === 'secondaire') secondaires += nb;
     const p = passage(m.id, annee);
     if (p.statut !== 'a_visiter') faites++;
     if (p.statut === 'don') { dons++; total += p.don || 0; }
     const p1 = passage(m.id, annee - 1);
     if (p1.statut === 'don') totalN1 += p1.don || 0;
   }
-  return { maisons: maisons.length, faites, dons, total, totalN1 };
+  return { maisons: maisons.length, faites, dons, total, totalN1, calendriers, secondaires, commande: calendriers - secondaires };
 }
 
 function dernierRetour(tourneeId, annee) {
@@ -428,23 +432,26 @@ function evolution(total, totalN1) {
 // ============================================================
 function rendreTableauDeBord() {
   const a = base.anneeCourante;
-  let maisons = 0, faites = 0, dons = 0, total = 0, totalN1 = 0;
-  const lignes = [...base.tournees].sort((x, y) => normaliser(x.nom).localeCompare(normaliser(y.nom))).map(t => {
+  let maisons = 0, faites = 0, dons = 0, total = 0, totalN1 = 0, calendriers = 0, secondaires = 0;
+  const lignes = [...base.tournees].sort((x, y) => normaliser(x.nom).localeCompare(normaliser(y.nom), 'fr', { numeric: true })).map(t => {
     const s = statsTournee(t.id, a);
     maisons += s.maisons; faites += s.faites; dons += s.dons; total += s.total; totalN1 += s.totalN1;
+    calendriers += s.calendriers; secondaires += s.secondaires;
     const pct = s.maisons ? Math.round(s.faites / s.maisons * 100) : 0;
     return `<tr class="lien" data-tournee="${esc(t.id)}">
       <td><b>${esc(t.nom)}</b></td><td>${esc(t.responsable || '')}</td>
       <td class="num">${s.maisons}</td>
+      <td class="num">${s.calendriers}</td><td class="num">${s.secondaires}</td><td class="num"><b>${s.commande}</b></td>
       <td><div class="mini-barre" style="width:120px;display:inline-block;vertical-align:middle"><div style="width:${pct}%"></div></div> ${pct} %</td>
       <td class="num">${s.dons}</td><td class="num">${euros(s.total)}</td><td class="num">${euros(s.totalN1)}</td>
       <td class="num">${evolution(s.total, s.totalN1)}</td>
       <td>${dateCourte(dernierRetour(t.id, a))}</td>
     </tr>`;
   });
-  $('tableau-corps').innerHTML = lignes.join('') || '<tr><td colspan="9" class="vide">Aucune tournée. Créez-en une avec ＋ ou importez une sauvegarde (⚙).</td></tr>';
+  $('tableau-corps').innerHTML = lignes.join('') || '<tr><td colspan="12" class="vide">Aucune tournée. Créez-en une avec ＋ ou importez une sauvegarde (⚙).</td></tr>';
   $('tableau-chiffres').innerHTML =
     carteChiffre(base.tournees.length, 'tournées') +
+    carteChiffre(calendriers - secondaires, `calendriers à commander (${calendriers} − ${secondaires} secondaires)`) +
     carteChiffre(`${faites} / ${maisons}`, 'maisons visitées') +
     carteChiffre(dons, 'dons') +
     carteChiffre(euros(total), `total ${a}`) +
@@ -480,6 +487,7 @@ function rendreChiffresTournee() {
   const aValider = maisons.filter(m => m.nouvelle).length;
   $('tournee-chiffres').innerHTML =
     carteChiffre(`${s.faites} / ${s.maisons}`, 'visitées') +
+    carteChiffre(s.commande, `calendriers à commander (${s.calendriers} − ${s.secondaires} secondaires)`) +
     carteChiffre(s.dons, 'dons') +
     carteChiffre(euros(s.total), `total ${a}`) +
     carteChiffre(euros(s.totalN1), `total ${a - 1}`) +
@@ -490,6 +498,7 @@ function rendreChiffresTournee() {
 
 function texteHistorique(p) {
   if (p.statut === 'a_visiter') return '';
+  if (p.statut === 'sans_don') return euros(0, false);
   return p.statut === 'don' ? euros(p.don) : STATUTS[p.statut] || p.statut;
 }
 
@@ -661,6 +670,7 @@ function ouvrirDialogueMaison(id) {
   $('m-etat').value = m ? m.etat || 'habitee' : 'habitee';
   $('m-tournee').value = m ? m.tourneeId : tourneeActiveId;
   $('m-infos').value = m ? m.infos || '' : '';
+  $('m-calendriers').value = m ? m.nbCalendriers ?? 1 : 1;
   $('m-gps').textContent = m && m.lat != null ? `Position : ${m.lat.toFixed(5)}, ${m.lng.toFixed(5)}` : 'Position : —';
   $('m-gps-resultat').textContent = m && m.geoLabel ? `BAN : ${m.geoLabel}` : '';
 
@@ -684,7 +694,8 @@ function enregistrerMaison() {
     nom: $('m-nom').value.trim(),
     etat: $('m-etat').value,
     tourneeId: $('m-tournee').value,
-    infos: $('m-infos').value.trim()
+    infos: $('m-infos').value.trim(),
+    nbCalendriers: Math.max(parseInt($('m-calendriers').value) || 0, 0)
   };
   if (!valeurs.voie && !valeurs.lieu) { alert('Indiquez au moins une voie ou un lieu-dit.'); return; }
   if (gpsDialogue) Object.assign(valeurs, { lat: gpsDialogue.lat, lng: gpsDialogue.lng, geoScore: gpsDialogue.score, geoLabel: gpsDialogue.label });
@@ -962,12 +973,12 @@ function imprimer() {
 
 function exporterCsv() {
   const a = base.anneeCourante;
-  const enTete = ['Tournée', 'Commune', 'Lieu-dit', 'N°', 'Voie', 'Habitant', 'État', `Statut ${a}`, `Don ${a}`, `Remarque ${a}`, `Don ${a - 1}`, 'Saisi par', 'Latitude', 'Longitude'];
+  const enTete = ['Tournée', 'Commune', 'Lieu-dit', 'N°', 'Voie', 'Habitant', 'État', 'Calendriers', `Statut ${a}`, `Don ${a}`, `Remarque ${a}`, `Don ${a - 1}`, 'Saisi par', 'Latitude', 'Longitude'];
   const lignes = [enTete];
   for (const t of base.tournees) {
     for (const m of trierMaisons(maisonsDe(t.id))) {
       const p = passage(m.id, a), p1 = passage(m.id, a - 1);
-      lignes.push([t.nom, m.commune, m.lieu, m.numero, m.voie, m.nom, ETATS[m.etat] || m.etat, STATUTS[p.statut],
+      lignes.push([t.nom, m.commune, m.lieu, m.numero, m.voie, m.nom, ETATS[m.etat] || m.etat, m.nbCalendriers ?? 1, STATUTS[p.statut],
         p.statut === 'don' ? String(p.don).replace('.', ',') : '', p.remarque || '',
         p1.statut === 'don' ? String(p1.don).replace('.', ',') : '', p.benevole || '', m.lat ?? '', m.lng ?? '']);
     }
@@ -1057,6 +1068,372 @@ async function importerV1(f) {
 }
 
 // ============================================================
+// IMPORT DE LA LISTE ACCESS (export Excel .xlsx, voir SPEC.md §8.4quater)
+// ============================================================
+const NB_ANNEES_IMPORT = 5;
+const NOM_PROVISOIRE = /^Tournée \d+$/;
+let accessEnCours = null;
+
+// Un .xlsx est une archive zip de fichiers XML : lecture sans bibliothèque, rien ne quitte le PC
+async function lireZip(tampon) {
+  const vue = new DataView(tampon);
+  let fin = tampon.byteLength - 22;
+  while (fin >= 0 && vue.getUint32(fin, true) !== 0x06054b50) fin--;
+  if (fin < 0) throw new Error('Ce fichier n\'est pas un classeur Excel (.xlsx).');
+  const decodeur = new TextDecoder();
+  const entrees = new Map();
+  let pos = vue.getUint32(fin + 16, true);
+  for (let i = 0, nb = vue.getUint16(fin + 10, true); i < nb; i++) {
+    const lgNom = vue.getUint16(pos + 28, true);
+    entrees.set(decodeur.decode(new Uint8Array(tampon, pos + 46, lgNom)), {
+      methode: vue.getUint16(pos + 10, true),
+      taille: vue.getUint32(pos + 20, true),
+      local: vue.getUint32(pos + 42, true)
+    });
+    pos += 46 + lgNom + vue.getUint16(pos + 30, true) + vue.getUint16(pos + 32, true);
+  }
+  return async (nom) => {
+    const e = entrees.get(nom);
+    if (!e) return null;
+    const debut = e.local + 30 + vue.getUint16(e.local + 26, true) + vue.getUint16(e.local + 28, true);
+    const octets = new Uint8Array(tampon, debut, e.taille);
+    if (e.methode === 0) return decodeur.decode(octets);
+    const flux = new Blob([octets]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return decodeur.decode(await new Response(flux).arrayBuffer());
+  };
+}
+
+function colonneExcel(reference) {
+  let n = 0;
+  for (const c of reference.match(/^[A-Z]+/)[0]) n = n * 26 + c.charCodeAt(0) - 64;
+  return n - 1;
+}
+
+async function lireXlsx(f) {
+  const lire = await lireZip(await f.arrayBuffer());
+  const xml = async (nom) => {
+    const texte = await lire(nom);
+    return texte ? new DOMParser().parseFromString(texte, 'application/xml') : null;
+  };
+  const classeur = await xml('xl/workbook.xml');
+  const rels = await xml('xl/_rels/workbook.xml.rels');
+  if (!classeur || !rels) throw new Error('Ce fichier n\'est pas un classeur Excel (.xlsx).');
+
+  const partages = [];
+  const ss = await xml('xl/sharedStrings.xml');
+  if (ss) {
+    for (const si of ss.getElementsByTagName('si')) {
+      partages.push([...si.getElementsByTagName('t')].filter(t => t.parentNode.nodeName !== 'rPh').map(t => t.textContent).join(''));
+    }
+  }
+  const rid = classeur.getElementsByTagName('sheet')[0].getAttribute('r:id');
+  const cible = [...rels.getElementsByTagName('Relationship')].find(r => r.getAttribute('Id') === rid).getAttribute('Target').replace(/^\//, '');
+  const feuille = await xml(cible.startsWith('xl/') ? cible : 'xl/' + cible);
+
+  const lignes = [];
+  for (const row of feuille.getElementsByTagName('row')) {
+    const ligne = [];
+    for (const c of row.getElementsByTagName('c')) {
+      const type = c.getAttribute('t');
+      const v = c.getElementsByTagName('v')[0];
+      let valeur = null;
+      if (type === 'inlineStr') valeur = [...c.getElementsByTagName('t')].map(t => t.textContent).join('');
+      else if (v && type === 's') valeur = partages[Number(v.textContent)];
+      else if (v && type) valeur = v.textContent;
+      else if (v) valeur = Number(v.textContent);
+      ligne[colonneExcel(c.getAttribute('r'))] = valeur;
+    }
+    lignes.push(ligne);
+  }
+  return lignes;
+}
+
+function analyserAccess(lignes) {
+  const entete = (lignes[0] || []).map(c => normaliser(c).replace(/\s/g, ''));
+  const colonne = (nom) => entete.indexOf(nom);
+  const c = {
+    ref: colonne('refadresse'), tournee: colonne('reftournee'), ville: colonne('ville'), numero: colonne('numero'),
+    a1: colonne('adresse1'), a2: colonne('adresse2'), loc: colonne('localisation'), nom: colonne('nomfamille'),
+    rem: colonne('remarques'), nb: colonne('nbrecalendrier'), ordre: colonne('ordredepassage'), sec: colonne('maisonsecondaire')
+  };
+  const manquantes = ['ref', 'tournee', 'ville', 'a1', 'nom'].filter(k => c[k] < 0);
+  if (manquantes.length) throw new Error('Colonnes attendues introuvables. Ce fichier n\'est pas la liste Access.');
+
+  const texte = (ligne, i) => (i < 0 || ligne[i] == null) ? '' : String(ligne[i]).trim();
+  const donnees = lignes.slice(1);
+  const annees = entete
+    .map((nom, i) => ({ annee: Number((nom.match(/^don(\d{4})$/) || [])[1]), i }))
+    .filter(a => a.annee && donnees.some(l => l[a.i] != null && l[a.i] !== ''))
+    .sort((x, y) => y.annee - x.annee)
+    .slice(0, NB_ANNEES_IMPORT);
+
+  const maisons = [], passages = [], calendriers = [], tournees = new Map();
+  let ignorees = 0, deja = 0;
+  for (const l of donnees) {
+    const ref = texte(l, c.ref), refTournee = texte(l, c.tournee), ville = texte(l, c.ville), a1 = texte(l, c.a1);
+    if (!ref || !refTournee || (!ville && !a1)) { ignorees++; continue; }
+    const id = 'access-' + ref;
+    if (!tournees.has(refTournee)) tournees.set(refTournee, { ref: refTournee, nb: 0, nouvelles: 0, secondaires: 0 });
+    const t = tournees.get(refTournee);
+    const secondaire = ['1', '-1', 'vrai', 'true'].includes(normaliser(texte(l, c.sec)));
+    t.nb++;
+    if (secondaire) t.secondaires++;
+    const nb = Number(texte(l, c.nb)) || 1;
+    const existante = maison(id);
+    if (existante) {
+      deja++;
+      if (existante.nbCalendriers == null) calendriers.push({ id, nb });   // maison importée avant le suivi des calendriers
+    } else {
+      t.nouvelles++;
+      maisons.push({
+        id, refTournee, commune: '', lieu: ville, villeSource: ville, ordreLieu: Number(texte(l, c.ordre)) || 999,
+        numero: texte(l, c.numero), voie: normaliser(a1) === normaliser(ville) ? '' : a1, ordreRue: 0,
+        nom: texte(l, c.nom), etat: secondaire ? 'secondaire' : 'habitee', lat: null, lng: null,
+        infos: [texte(l, c.loc), texte(l, c.a2), texte(l, c.rem)].filter(Boolean).join(' — '),
+        nbCalendriers: nb, nouvelle: false, refExterne: 'access:' + ref, creeLe: maintenant()
+      });
+    }
+    for (const a of annees) {
+      if (indexPassages.has(cle(id, a.annee))) continue;
+      // Dans Access, 0 et case vide ont le même sens : pas de don cette année-là
+      const don = lireMontant(l[a.i]);
+      passages.push({ maisonId: id, annee: a.annee, statut: don > 0 ? 'don' : 'sans_don', don, remarque: '', modifieLe: null, source: 'import-access', benevole: '' });
+    }
+  }
+  return { annees: annees.map(a => a.annee), maisons, passages, calendriers, tournees: [...tournees.values()], ignorees, deja, total: donnees.length };
+}
+
+// Table des tournées (RéfTournée, NomTournée) : numéro -> nom
+function lireNomsTournees(lignes) {
+  const entete = (lignes[0] || []).map(c => normaliser(c).replace(/\s/g, ''));
+  const iRef = entete.indexOf('reftournee'), iNom = entete.indexOf('nomtournee');
+  if (iRef < 0 || iNom < 0) return null;
+  const noms = new Map();
+  for (const l of lignes.slice(1)) {
+    if (l[iRef] != null && l[iNom]) noms.set(String(l[iRef]).trim(), String(l[iNom]).trim());
+  }
+  return noms;
+}
+
+// Donne leur vrai nom aux tournées encore provisoires ; un nom modifié à la main est conservé
+function nommerTourneesAccess(noms) {
+  let nb = 0;
+  for (const t of base.tournees) {
+    const ref = String(t.refExterne || '').replace(/^access:/, '');
+    if (NOM_PROVISOIRE.test(t.nom) && noms.has(ref)) { t.nom = noms.get(ref); nb++; }
+  }
+  return nb;
+}
+
+async function preparerAccess(fichiers) {
+  try {
+    const classeurs = await Promise.all([...fichiers].map(lireXlsx));
+    const noms = classeurs.map(lireNomsTournees).find(Boolean) || new Map();
+    const liste = classeurs.find(l => !lireNomsTournees(l));
+    if (!liste) {
+      const nb = nommerTourneesAccess(noms);
+      enregistrer();
+      rendreTout();
+      toast(`✓ ${nb} tournée(s) renommée(s)`);
+      return;
+    }
+    const a = analyserAccess(liste);
+    a.noms = noms;
+    accessEnCours = a;
+    $('access-resume').textContent = `${a.total} lignes · ${a.tournees.length} tournées · ${a.maisons.length} maisons à ajouter · ` +
+      `${a.passages.length} passages sur ${a.annees.slice().reverse().join(', ') || 'aucune année'}.`;
+    const alertes = [];
+    if (a.deja) alertes.push(`${a.deja} maison(s) déjà présente(s) : seuls leurs passages manquants seront ajoutés.`);
+    if (a.ignorees) alertes.push(`${a.ignorees} ligne(s) sans tournée ou sans adresse seront ignorées.`);
+    $('access-alerte').textContent = alertes.join(' ');
+    $('access-alerte').hidden = alertes.length === 0;
+    $('access-corps').innerHTML = a.tournees.sort((x, y) => Number(x.ref) - Number(y.ref)).map(t =>
+      `<tr><td>${esc(nomTourneeAccess(t.ref, noms))}</td><td class="num">${t.nb}</td><td class="num">${t.nouvelles}</td><td class="num">${t.secondaires}</td></tr>`
+    ).join('');
+    $('dlg-access').showModal();
+  } catch (e) {
+    alert('❌ ' + e.message);
+  }
+}
+
+function tourneeAccess(ref) {
+  return base.tournees.find(t => t.refExterne === 'access:' + ref);
+}
+
+function nomTourneeAccess(ref, noms) {
+  const t = tourneeAccess(ref);
+  if (t && !NOM_PROVISOIRE.test(t.nom)) return t.nom;
+  return noms.get(ref) || `Tournée ${ref}`;
+}
+
+function appliquerAccess() {
+  const a = accessEnCours;
+  for (const t of a.tournees) {
+    if (!tourneeAccess(t.ref)) {
+      base.tournees.push({ id: uid('t-'), nom: a.noms.get(t.ref) || `Tournée ${t.ref}`, responsable: '', secteur: '', ordre: Number(t.ref) || 0, refExterne: 'access:' + t.ref });
+    }
+  }
+  nommerTourneesAccess(a.noms);
+  for (const { refTournee, ...m } of a.maisons) base.maisons.push({ ...m, tourneeId: tourneeAccess(refTournee).id });
+  base.passages.push(...a.passages);
+  for (const { id, nb } of a.calendriers) {
+    const m = maison(id);
+    m.nbCalendriers = nb;
+    // Retire la mention posée par la version 0.2.0 de l'import (une vraie remarque reste intacte si nb = 1)
+    if (nb > 1) m.infos = (m.infos || '').replace(new RegExp(`( — )?${nb} calendriers$`), '');
+  }
+  indexer();
+  journaliser('import', `Liste Access : ${a.maisons.length} maisons, ${a.passages.length} passages (${a.annees.slice().reverse().join(', ')})`);
+  accessEnCours = null;
+  $('dlg-access').close();
+  if (!tourneeActiveId && base.tournees[0]) tourneeActiveId = base.tournees[0].id;
+  enregistrer();
+  rendreTout();
+  toast('✓ Liste Access importée');
+}
+
+// ============================================================
+// COMMUNES ET HAMEAUX (valeurs de la colonne « Ville » d'Access)
+// ============================================================
+const BOZOULS = { lat: 44.4717, lng: 2.7203 };
+const RAYON_COMMUNES_KM = 16;   // écarte les homonymes éloignés dans le département
+let lieuxEnCours = [];
+
+function memeNom(a, b) {
+  const simple = (t) => normaliser(t).replace(/[-']/g, ' ');
+  return simple(a) === simple(b);
+}
+
+function groupesLieux() {
+  const groupes = new Map();
+  for (const m of base.maisons) {
+    if (!String(m.refExterne || '').startsWith('access:')) continue;
+    if (m.villeSource == null) m.villeSource = m.lieu;   // maison importée avant la version 0.3.0
+    const k = normaliser(m.villeSource);
+    if (!groupes.has(k)) groupes.set(k, { ville: m.villeSource, maisons: [] });
+    groupes.get(k).maisons.push(m);
+  }
+  return [...groupes.values()].sort((x, y) => y.maisons.length - x.maisons.length).map(g => {
+    const commune = g.maisons[0].commune || '';
+    const avecVoie = g.maisons.find(m => m.voie);
+    return {
+      ...g,
+      commune,
+      lieu: !commune ? g.ville : (avecVoie ? avecVoie.lieu : g.maisons[0].lieu),
+      tourneeId: g.maisons[0].tourneeId,
+      etat: commune ? '✅' : ''
+    };
+  });
+}
+
+function ouvrirLieux() {
+  lieuxEnCours = groupesLieux();
+  if (!lieuxEnCours.length) { alert('Importez d\'abord la liste Access.'); return; }
+  rendreLieux();
+  $('dlg-lieux').showModal();
+}
+
+function rendreLieux() {
+  const sansCommune = lieuxEnCours.filter(g => !g.commune).length;
+  $('lieux-resume').textContent = `${lieuxEnCours.length} valeurs · ${sansCommune} sans commune.`;
+  $('lieux-corps').innerHTML = lieuxEnCours.map((g, i) => {
+    const t = tournee(g.tourneeId);
+    return `<tr data-ligne="${i}">
+      <td><b>${esc(g.ville || '(vide)')}</b></td>
+      <td class="num">${g.maisons.length}</td>
+      <td class="discret">${esc(t ? t.nom : '')}</td>
+      <td><input data-lieu="commune" value="${esc(g.commune)}" placeholder="Commune" /></td>
+      <td><input data-lieu="lieu" value="${esc(g.lieu)}" placeholder="(aucun)" /></td>
+      <td title="✅ nom exact · 🟡 à vérifier · 🔴 non trouvée">${g.etat}</td>
+    </tr>`;
+  }).join('');
+}
+
+function lireSaisieLieux() {
+  document.querySelectorAll('#lieux-corps tr[data-ligne]').forEach(tr => {
+    const g = lieuxEnCours[Number(tr.dataset.ligne)];
+    g.commune = tr.querySelector('[data-lieu="commune"]').value.trim();
+    g.lieu = tr.querySelector('[data-lieu="lieu"]').value.trim();
+  });
+}
+
+function distanceKm(lat, lng) {
+  const dx = (lng - BOZOULS.lng) * 111.32 * Math.cos(BOZOULS.lat * Math.PI / 180);
+  const dy = (lat - BOZOULS.lat) * 110.57;
+  return Math.hypot(dx, dy);
+}
+
+// Seul le nom du lieu est envoyé à la BAN, jamais celui des habitants
+async function chercherCommune(ville) {
+  const rep = await fetch(`https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(ville)}&limit=10&lat=${BOZOULS.lat}&lon=${BOZOULS.lng}`);
+  if (!rep.ok) throw new Error('Service d\'adresses indisponible');
+  const proches = ((await rep.json()).features || []).filter(f =>
+    String(f.properties.citycode).startsWith('12') &&
+    distanceKm(f.geometry.coordinates[1], f.geometry.coordinates[0]) <= RAYON_COMMUNES_KM);
+  const approchee = proches.find(f => f.properties.score >= 0.6);
+  return {
+    exactes: [...new Set(proches.filter(f => memeNom(f.properties.name, ville) || memeNom(f.properties.city, ville)).map(f => f.properties.city))],
+    approchee: approchee ? approchee.properties.city : ''
+  };
+}
+
+// La commune la plus représentée parmi les noms exacts d'une tournée sert à départager les homonymes
+function communeDominante(reponses, tourneeId) {
+  const compte = new Map();
+  for (const [g, r] of reponses) {
+    if (g.tourneeId === tourneeId && r.exactes[0]) compte.set(r.exactes[0], (compte.get(r.exactes[0]) || 0) + g.maisons.length);
+  }
+  return ([...compte.entries()].sort((a, b) => b[1] - a[1])[0] || [''])[0];
+}
+
+async function proposerCommunes() {
+  lireSaisieLieux();
+  const aTraiter = lieuxEnCours.filter(g => !g.commune && g.ville);
+  const reponses = new Map();
+  const bouton = $('btn-proposer-communes');
+  bouton.disabled = true;
+  try {
+    for (const [i, g] of aTraiter.entries()) {
+      bouton.textContent = `🌍 ${i + 1} / ${aTraiter.length}…`;
+      reponses.set(g, await chercherCommune(g.ville).catch(() => ({ exactes: [], approchee: '' })));
+      await new Promise(res => setTimeout(res, 60));
+    }
+    for (const [g, r] of reponses) {
+      const dominante = communeDominante(reponses, g.tourneeId);
+      if (r.exactes.some(c => memeNom(c, g.ville)) || (dominante && r.exactes.includes(dominante))) {
+        Object.assign(g, { commune: r.exactes.find(c => memeNom(c, g.ville)) || dominante, etat: '✅' });
+      } else {
+        const commune = r.exactes[0] || dominante || r.approchee;
+        Object.assign(g, commune ? { commune, etat: '🟡' } : { etat: '🔴' });
+      }
+      if (g.commune && memeNom(g.commune, g.ville)) g.lieu = '';
+    }
+  } finally {
+    bouton.disabled = false;
+    bouton.textContent = '🌍 Proposer les communes manquantes';
+  }
+  rendreLieux();
+}
+
+function enregistrerLieux() {
+  lireSaisieLieux();
+  let nb = 0;
+  for (const g of lieuxEnCours) {
+    if (!g.commune) continue;
+    for (const m of g.maisons) {
+      m.commune = g.commune;
+      m.lieu = g.lieu || (m.voie ? '' : g.ville);   // sans rue, le hameau reste la seule adresse
+      nb++;
+    }
+  }
+  journaliser('import', `Communes et hameaux : ${nb} maisons mises à jour`);
+  $('dlg-lieux').close();
+  enregistrer();
+  rendreTout();
+  toast(`✓ ${nb} maisons mises à jour`);
+}
+
+// ============================================================
 // ANNÉE DE CAMPAGNE
 // ============================================================
 function changerAnnee(delta) {
@@ -1103,6 +1480,11 @@ async function action(nom, cible) {
     case 'ouvrir-base': case 'changer-base': document.querySelectorAll('dialog[open]').forEach(d => d.close()); await ouvrirBase(); break;
     case 'creer-base': await creerBase(); break;
     case 'importer-v1': document.querySelectorAll('dialog[open]').forEach(d => d.close()); $('fichier-v1').click(); break;
+    case 'importer-access': document.querySelectorAll('dialog[open]').forEach(d => d.close()); $('fichier-access').click(); break;
+    case 'appliquer-access': appliquerAccess(); break;
+    case 'ouvrir-lieux': document.querySelectorAll('dialog[open]').forEach(d => d.close()); ouvrirLieux(); break;
+    case 'proposer-communes': proposerCommunes(); break;
+    case 'enregistrer-lieux': enregistrerLieux(); break;
     case 'lier-fichier':
       try { await choisirFichierEnregistrement(); toast('💾 Base enregistrée dans ' + fichier.name); }
       catch (e) { if (e.name !== 'AbortError') alert('❌ ' + e.message); }
@@ -1182,6 +1564,11 @@ function initEvenements() {
     const f = e.target.files[0];
     e.target.value = '';
     if (f) await importerV1(f);
+  });
+  $('fichier-access').addEventListener('change', async (e) => {
+    const fichiers = [...e.target.files];
+    e.target.value = '';
+    if (fichiers.length) await preparerAccess(fichiers);
   });
   $('fichier-base').addEventListener('change', async (e) => {
     const f = e.target.files[0];

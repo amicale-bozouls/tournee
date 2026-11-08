@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.1.6';
+const APP_VERSION = '0.1.8';
 const CLE_STOCKAGE = 'tournee_terrain_v2';
 const CLE_BENEVOLE = 'tournee_terrain_benevole';
 const FORMAT_TOURNEE = 'tournee-bozouls';
@@ -18,7 +18,8 @@ const STATUTS = {
   repasser:      { libelle: 'À repasser', court: 'Repasser' },
   boite_lettres: { libelle: 'Boîte aux lettres', court: 'BAL' },
   refuse:        { libelle: 'Refus',      court: 'Refus' },
-  autre:         { libelle: 'Autre',      court: 'Autre' }
+  sans_don:      { libelle: 'Passé sans don', court: 'Sans don' },
+  autre:        { libelle: 'Autre',      court: 'Autre' }
 };
 const ACTIONS_RAPIDES = ['don', 'absent', 'repasser', 'boite_lettres', 'refuse'];
 const ETATS = {
@@ -29,7 +30,7 @@ const ETATS = {
 };
 const COULEURS = {
   a_visiter: '#8a94a3', don: '#1e8e3e', absent: '#d48a00', repasser: '#7b3fe4',
-  boite_lettres: '#0b7fa8', refuse: '#c62828', autre: '#4a5566'
+  boite_lettres: '#0b7fa8', refuse: '#c62828', sans_don: '#6b7480', autre: '#4a5566'
 };
 
 // ============================================================
@@ -124,8 +125,8 @@ function dernierHistorique(m) {
 
 function maisonsTriees() {
   return [...etat.maisons].sort((a, b) =>
+    (a.ordreLieu || 0) - (b.ordreLieu || 0) ||   // l'ordre de passage prime, même à cheval sur deux communes
     normaliser(a.commune).localeCompare(normaliser(b.commune)) ||
-    (a.ordreLieu || 0) - (b.ordreLieu || 0) ||
     normaliser(a.lieu).localeCompare(normaliser(b.lieu)) ||
     (a.ordreRue || 0) - (b.ordreRue || 0) ||
     normaliser(a.voie).localeCompare(normaliser(b.voie)) ||

@@ -64,7 +64,8 @@
         <table class="tableau">
           <thead>
             <tr>
-              <th>Tournée</th><th>Responsable</th><th class="num">Maisons</th><th>Avancement</th>
+              <th>Tournée</th><th>Responsable</th><th class="num">Maisons</th>
+              <th class="num">Calendriers</th><th class="num">Secondaires</th><th class="num">À commander</th><th>Avancement</th>
               <th class="num">Dons</th><th class="num">Total <span class="annee-texte"></span></th>
               <th class="num">Total <span class="annee-precedente-texte"></span></th><th class="num">Évolution</th>
               <th>Dernier retour</th>
@@ -152,6 +153,7 @@
       <label class="champ"><span>Habitant</span><input id="m-nom" /></label>
       <label class="champ"><span>État</span><select id="m-etat"></select></label>
       <label class="champ"><span>Tournée</span><select id="m-tournee"></select></label>
+      <label class="champ champ-court"><span>Calendriers</span><input id="m-calendriers" type="number" min="0" /></label>
     </div>
     <label class="champ"><span>Infos permanentes (affichées chaque année)</span><input id="m-infos" placeholder="Ex : chien, passer le matin…" /></label>
     <div class="ligne-gps">
@@ -193,6 +195,48 @@
   </form>
 </dialog>
 
+<!-- ======= FENÊTRE : IMPORT ACCESS ======= -->
+<dialog id="dlg-access" class="fenetre fenetre-large">
+  <form method="dialog">
+    <h2>Importer la liste Access</h2>
+    <p id="access-resume" class="discret"></p>
+    <p id="access-alerte" class="alerte" hidden></p>
+    <div class="retour-tableau">
+      <table class="tableau">
+        <thead><tr><th>Tournée</th><th class="num">Maisons</th><th class="num">Nouvelles</th><th class="num">Secondaires</th></tr></thead>
+        <tbody id="access-corps"></tbody>
+      </table>
+    </div>
+    <p class="discret">Les maisons déjà importées et vos corrections ne sont jamais écrasées. Téléchargez une copie de la base (⚙) avant un import important.</p>
+    <div class="fenetre-actions">
+      <span class="espace"></span>
+      <button type="button" class="btn" data-action="fermer-dialogue">Annuler</button>
+      <button type="button" class="btn btn-primaire" data-action="appliquer-access">✓ Importer</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ======= FENÊTRE : COMMUNES ET HAMEAUX ======= -->
+<dialog id="dlg-lieux" class="fenetre fenetre-large">
+  <form method="dialog">
+    <h2>Communes et hameaux</h2>
+    <p class="discret">Pour chaque valeur de la colonne « Ville », indiquez sa commune. Une correction s'applique à toutes les maisons de la ligne. Laissez le lieu-dit vide quand les rues suffisent (centre-bourg).</p>
+    <p id="lieux-resume" class="discret"></p>
+    <div class="retour-tableau">
+      <table class="tableau tableau-maisons">
+        <thead><tr><th>Valeur Access</th><th class="num">Maisons</th><th>Tournée</th><th>Commune</th><th>Lieu-dit</th><th></th></tr></thead>
+        <tbody id="lieux-corps"></tbody>
+      </table>
+    </div>
+    <div class="fenetre-actions">
+      <button type="button" class="btn" data-action="proposer-communes" id="btn-proposer-communes">🌍 Proposer les communes manquantes</button>
+      <span class="espace"></span>
+      <button type="button" class="btn" data-action="fermer-dialogue">Annuler</button>
+      <button type="button" class="btn btn-primaire" data-action="enregistrer-lieux">Enregistrer</button>
+    </div>
+  </form>
+</dialog>
+
 <!-- ======= FENÊTRE : MENU BASE ======= -->
 <dialog id="dlg-base" class="fenetre">
   <form method="dialog">
@@ -202,6 +246,8 @@
       <button type="button" class="btn" data-action="lier-fichier">💾 Enregistrer dans un fichier…</button>
       <button type="button" class="btn" data-action="telecharger-copie">⬇ Télécharger une copie datée</button>
       <button type="button" class="btn" data-action="exporter-csv">📊 Export Excel (CSV) de l'année</button>
+      <button type="button" class="btn" data-action="importer-access">📥 Importer la liste Access (Excel)</button>
+      <button type="button" class="btn" data-action="ouvrir-lieux">🏘 Communes et hameaux</button>
       <button type="button" class="btn" data-action="importer-v1">📥 Importer une sauvegarde de l'ancienne application</button>
       <button type="button" class="btn" data-action="changer-base">📂 Ouvrir une autre base</button>
     </div>
@@ -217,6 +263,7 @@
 <input id="fichier-retour" type="file" accept=".json,application/json" multiple hidden />
 <input id="fichier-v1" type="file" accept=".json,application/json" hidden />
 <input id="fichier-base" type="file" accept=".json,application/json" hidden />
+<input id="fichier-access" type="file" accept=".xlsx" multiple hidden />
 <div id="zone-impression" class="zone-impression"></div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
