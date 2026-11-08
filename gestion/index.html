@@ -105,10 +105,16 @@
             </div>
           </div>
           <div id="vue-tableau">
+            <div id="barre-selection" class="barre-selection" hidden>
+              <span id="selection-texte"></span>
+              <button class="btn" data-action="tout-cocher" id="btn-tout-cocher"></button>
+              <button class="btn" data-action="tout-decocher" id="btn-tout-decocher">Tout décocher</button>
+              <button class="btn btn-primaire" data-action="placer-selection" id="btn-placer-selection">📌 Placer la sélection</button>
+            </div>
             <table class="tableau tableau-maisons">
               <thead>
                 <tr>
-                  <th class="num">#</th><th>N°</th><th>Voie</th><th>Habitant</th><th>État</th>
+                  <th></th><th class="num">#</th><th>N°</th><th>Voie</th><th>Habitant</th><th>État</th>
                   <th class="num annee-n2"></th><th class="num annee-n1"></th>
                   <th class="col-statut">Statut <span class="annee-texte"></span></th>
                   <th class="col-don">Don</th><th>Remarque</th><th></th>

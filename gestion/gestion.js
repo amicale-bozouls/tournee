@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.9.0';
+const APP_VERSION = '0.10.0';
 const FORMAT_BASE = 'base-tournees-bozouls';
 const FORMAT_TOURNEE = 'tournee-bozouls';
 const FORMAT_RETOUR = 'retour-tournee-bozouls';
@@ -51,6 +51,7 @@ let gpsDialogue = null;       // { lat, lng, score, label } trouvé dans la fich
 let retourEnCours = null;     // { retour, lignes }
 let carte = null, coucheCarte = null;
 const marqueursMaison = new Map();   // id de maison -> marqueur de la carte
+const selectionPlacement = new Set();   // maisons sans position cochées dans la liste
 let placement = null;                // placement à la main en cours : { ids, groupe, repere, auClic }
 const LIBELLE_GROUPE = 'Groupe placé à la main';
 const LIBELLE_MAISON = 'Placée à la main';
@@ -532,9 +533,14 @@ function texteHistorique(p) {
   return p.statut === 'don' ? euros(p.don) : STATUTS[p.statut] || p.statut;
 }
 
+function sansPosition(m) {
+  return m.lat == null && m.etat !== 'disparue';
+}
+
 function correspondFiltres(m, a) {
   if (filtreStatut) {
     if (filtreStatut === 'nouvelle') { if (!m.nouvelle) return false; }
+    else if (filtreStatut === 'sans_position') { if (!sansPosition(m)) return false; }
     else if (passage(m.id, a).statut !== filtreStatut) return false;
   }
   if (!rechercheMaison) return true;
@@ -550,7 +556,7 @@ function rendreMaisons() {
   for (const m of maisons) {
     const groupe = [m.commune, m.lieu].filter(Boolean).join(' — ') || 'Sans lieu-dit';
     if (groupe !== dernierGroupe) {
-      html += `<tr class="groupe"><td colspan="11">📍 ${esc(groupe)}${m.ordreLieu ? ` <span class="discret">(ordre ${m.ordreLieu})</span>` : ''}</td></tr>`;
+      html += `<tr class="groupe"><td colspan="12">📍 ${esc(groupe)}${m.ordreLieu ? ` <span class="discret">(ordre ${m.ordreLieu})</span>` : ''}</td></tr>`;
       dernierGroupe = groupe;
     }
     n++;
@@ -558,6 +564,7 @@ function rendreMaisons() {
     const etiquettes = (m.etat !== 'habitee' ? ` <span class="etiquette">${esc(ETATS[m.etat] || m.etat)}</span>` : '') +
                        (m.nouvelle ? ' <span class="etiquette etiquette-nouvelle">Nouvelle — à valider</span>' : '');
     html += `<tr data-id="${esc(m.id)}" class="${estConcernee(m) ? '' : 'inactive'}">
+      <td>${sansPosition(m) ? `<input type="checkbox" class="choix-placement" title="Sélectionner pour placer sur la carte"${selectionPlacement.has(m.id) ? ' checked' : ''} />` : ''}</td>
       <td class="num">${n}</td>
       <td>${esc(m.numero)}</td>
       <td>${esc(m.voie)}${m.lat == null ? ' <span title="Pas de position GPS">📍?</span>' : (m.posApprochee ? ' <span title="Position approchée (rue, hameau ou voisine)">≈</span>' : '')}</td>
@@ -574,7 +581,36 @@ function rendreMaisons() {
     </tr>`;
   }
   $('maisons-corps').innerHTML = html ||
-    `<tr><td colspan="11" class="vide">${rechercheMaison || filtreStatut ? 'Aucune maison pour ce filtre.' : 'Aucune maison. Ajoutez-en avec « ➕ Maison ».'}</td></tr>`;
+    `<tr><td colspan="12" class="vide">${rechercheMaison || filtreStatut ? 'Aucune maison pour ce filtre.' : 'Aucune maison. Ajoutez-en avec « ➕ Maison ».'}</td></tr>`;
+  rendreSelection();
+}
+
+// Sélection multiple des maisons sans position, pour les pré-positionner ensemble
+function maisonsSansPositionVisibles() {
+  return maisonsDe(tourneeActiveId).filter(m => sansPosition(m) && correspondFiltres(m, base.anneeCourante));
+}
+
+function rendreSelection() {
+  const visibles = maisonsSansPositionVisibles();
+  const n = selectionPlacement.size;
+  $('barre-selection').hidden = visibles.length === 0 && n === 0;
+  $('selection-texte').textContent = n ? `${n} maison(s) sélectionnée(s)` : `${visibles.length} maison(s) sans position`;
+  $('btn-tout-cocher').textContent = `Tout cocher (${visibles.length})`;
+  $('btn-tout-cocher').hidden = visibles.length === 0;
+  $('btn-tout-decocher').hidden = n === 0;
+  $('btn-placer-selection').disabled = n === 0;
+}
+
+function cocherTout(cocher) {
+  if (cocher) maisonsSansPositionVisibles().forEach(m => selectionPlacement.add(m.id));
+  else selectionPlacement.clear();
+  rendreMaisons();
+}
+
+function placerSelection() {
+  const ids = [...selectionPlacement].filter(id => maison(id) && sansPosition(maison(id)));
+  if (!ids.length) return;
+  demarrerPlacement(ids[0], { ids, titre: 'Sélection' });
 }
 
 // Saisie directe dans le tableau (retours papier, dons remis en main propre…)
@@ -1139,6 +1175,7 @@ function validerPlacement() {
     m.posAvant = { lat: m.lat ?? null, lng: m.lng ?? null, posApprochee: !!m.posApprochee, geoNiveau: m.geoNiveau || '', geoLabel: m.geoLabel || '', geoScore: m.geoScore ?? null };
     Object.assign(m, position);
   }
+  ids.forEach(id => selectionPlacement.delete(id));
   terminerPlacement();
   enregistrer();
   rendreCarte(false);
@@ -1879,6 +1916,9 @@ async function action(nom, cible) {
     case 'ouvrir-gps': document.querySelectorAll('dialog[open]').forEach(d => d.close()); ouvrirGps(null); break;
     case 'appliquer-rues': appliquerRues(); break;
     case 'annuler-manuel': annulerManuel(Number(cible.dataset.i)); break;
+    case 'tout-cocher': cocherTout(true); break;
+    case 'tout-decocher': cocherTout(false); break;
+    case 'placer-selection': placerSelection(); break;
     case 'lancer-gps': lancerGps(); break;
     case 'arreter-gps': gpsArret = true; break;
     case 'exporter-terrain': exporterTerrain(); break;
@@ -1897,12 +1937,19 @@ function initEvenements() {
     if (el.dataset.vue) { afficherVueTournee(el.dataset.vue); return; }
     if (el.dataset.tournee) {
       tourneeActiveId = el.dataset.tournee;
+      selectionPlacement.clear();
       rechercheMaison = ''; $('recherche-maison').value = '';
       afficherEcran('tournee');
     }
   });
 
   $('maisons-corps').addEventListener('change', saisieTableau);
+  $('maisons-corps').addEventListener('change', (e) => {
+    if (!e.target.classList.contains('choix-placement')) return;
+    const id = e.target.closest('tr[data-id]').dataset.id;
+    if (e.target.checked) selectionPlacement.add(id); else selectionPlacement.delete(id);
+    rendreSelection();
+  });
   // Entrée dans une cellule = passer à la ligne suivante (saisie rapide d'une feuille papier)
   $('maisons-corps').addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' || !e.target.dataset.champ) return;
@@ -1920,7 +1967,8 @@ function initEvenements() {
   });
   $('filtre-statut').innerHTML = '<option value="">Tous les statuts</option>' +
     Object.entries(STATUTS).map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join('') +
-    '<option value="nouvelle">Nouvelles à valider</option>';
+    '<option value="nouvelle">Nouvelles à valider</option>' +
+    '<option value="sans_position">Sans position</option>';
   $('filtre-statut').addEventListener('change', (e) => { filtreStatut = e.target.value; rendreMaisons(); });
 
   $('retour-tout').addEventListener('change', (e) => {

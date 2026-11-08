@@ -131,6 +131,9 @@ h3 { font-size: 14px; margin-top: 12px; color: var(--texte-2); }
 }
 .tableau-maisons input:hover, .tableau-maisons select:hover { border-color: var(--bordure); }
 .tableau-maisons input:focus, .tableau-maisons select:focus { border-color: var(--primaire); background: #fff; outline: none; }
+.tableau-maisons input.choix-placement { width: auto; }
+.barre-selection { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--primaire-clair); border-radius: 8px; padding: 6px 10px; margin-bottom: 8px; }
+.barre-selection span { flex: 1; font-weight: 600; }
 .col-statut { width: 150px; }
 .col-don { width: 90px; }
 .tableau-maisons .saisie-don { text-align: right; }
