@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.12.0';
+const APP_VERSION = '0.14.0';
 const FORMAT_BASE = 'base-tournees-bozouls';
 const FORMAT_TOURNEE = 'tournee-bozouls';
 const FORMAT_RETOUR = 'retour-tournee-bozouls';
@@ -22,6 +22,19 @@ const STATUTS = {
   sans_don:      'Passé sans don',
   autre:         'Autre'
 };
+// Don reçu par courrier (saisie PC uniquement) : un « don » normal avec mode = 'courrier',
+// donc compté dans les totaux et vu comme un don par l'app terrain
+const STATUT_COURRIER = 'don_courrier';
+const OPTIONS_STATUT = Object.entries(STATUTS).flatMap(e => e[0] === 'don' ? [e, [STATUT_COURRIER, 'Don par courrier']] : [e]);
+
+function valeurStatut(p) {
+  return p.statut === 'don' && p.mode === 'courrier' ? STATUT_COURRIER : p.statut;
+}
+
+function libelleStatut(p) {
+  return valeurStatut(p) === STATUT_COURRIER ? 'Don par courrier' : STATUTS[p.statut] || p.statut;
+}
+
 const ETATS = {
   habitee:    'Habitée',
   inhabitee:  'Inhabitée / vide',
@@ -38,6 +51,7 @@ const COULEURS = {
 // ============================================================
 let base = null;              // contenu de base_tournees.json
 let indexPassages = new Map(); // "maisonId|annee" -> passage
+let indexHistorique = new Set();
 let fichier = null;           // FileSystemFileHandle de la base (null = navigateur seulement)
 let fichierAutorise = false;  // permission d'écriture accordée dans cette session
 let tourneeActiveId = null;
@@ -176,21 +190,35 @@ function nouvelleBase() {
     tournees: [],
     maisons: [],
     passages: [],
-    journal: []
+    journal: [],
+    historique: []
   };
 }
 
 function validerBase(donnees) {
   if (!donnees || donnees.format !== FORMAT_BASE) throw new Error('Ce fichier n\'est pas une base de tournées.');
   if (donnees.schemaVersion > SCHEMA_VERSION) throw new Error('Cette base vient d\'une version plus récente de l\'application.');
-  ['tournees', 'maisons', 'passages', 'journal'].forEach(k => { if (!Array.isArray(donnees[k])) donnees[k] = []; });
+  ['tournees', 'maisons', 'passages', 'journal', 'historique'].forEach(k => { if (!Array.isArray(donnees[k])) donnees[k] = []; });
   return donnees;
 }
 
 function cle(maisonId, annee) { return maisonId + '|' + annee; }
 
+function cleHistorique(h) {
+  return [h.maisonId, h.annee, h.le, h.statut, h.don || 0].join('|');
+}
+
 function indexer() {
   indexPassages = new Map(base.passages.map(p => [cle(p.maisonId, p.annee), p]));
+  indexHistorique = new Set(base.historique.map(cleHistorique));
+}
+
+// Historique des changements d'une maison ; un même retour importé deux fois n'ajoute rien
+function noterHistorique(h) {
+  const k = cleHistorique(h);
+  if (indexHistorique.has(k)) return;
+  indexHistorique.add(k);
+  base.historique.push(h);
 }
 
 function passage(maisonId, annee) {
@@ -205,7 +233,7 @@ function ecrirePassage(maisonId, annee, valeurs) {
     indexPassages.set(cle(maisonId, annee), p);
   }
   Object.assign(p, valeurs);
-  if (p.statut !== 'don') p.don = 0;
+  if (p.statut !== 'don') { p.don = 0; p.mode = ''; }
   if (!p.modifieLe) p.modifieLe = maintenant();
   return p;
 }
@@ -530,6 +558,7 @@ function rendreChiffresTournee() {
 function texteHistorique(p) {
   if (p.statut === 'a_visiter') return '';
   if (p.statut === 'sans_don') return euros(0, false);
+  if (valeurStatut(p) === STATUT_COURRIER) return euros(p.don) + ' ✉';
   return p.statut === 'don' ? euros(p.don) : STATUTS[p.statut] || p.statut;
 }
 
@@ -547,7 +576,8 @@ function correspondFiltres(m, a) {
     if (filtreStatut === 'nouvelle') { if (!m.nouvelle) return false; }
     else if (filtreStatut === 'sans_position') { if (!sansPosition(m)) return false; }
     else if (filtreStatut === 'approchee') { if (m.lat == null || !m.posApprochee) return false; }
-    else if (passage(m.id, a).statut !== filtreStatut) return false;
+    else if (filtreStatut === 'don') { if (passage(m.id, a).statut !== 'don') return false; }   // tous les dons, courrier compris
+    else if (valeurStatut(passage(m.id, a)) !== filtreStatut) return false;
   }
   if (!rechercheMaison) return true;
   const q = normaliser(rechercheMaison);
@@ -557,7 +587,7 @@ function correspondFiltres(m, a) {
 function rendreMaisons() {
   const a = base.anneeCourante;
   const maisons = trierMaisons(maisonsDe(tourneeActiveId)).filter(m => correspondFiltres(m, a));
-  const optionsStatut = Object.entries(STATUTS);
+  const optionsStatut = OPTIONS_STATUT;
   let html = '', dernierGroupe = null, n = 0;
   for (const m of maisons) {
     const groupe = [m.commune, m.lieu].filter(Boolean).join(' — ') || 'Sans lieu-dit';
@@ -578,8 +608,8 @@ function rendreMaisons() {
       <td>${etiquettes.trim() || '<span class="discret">Habitée</span>'}</td>
       <td class="num discret">${esc(texteHistorique(passage(m.id, a - 2)))}</td>
       <td class="num discret">${esc(texteHistorique(passage(m.id, a - 1)))}</td>
-      <td><select class="statut-select" data-champ="statut" data-statut="${esc(p.statut)}">
-        ${optionsStatut.map(([k, l]) => `<option value="${k}"${k === p.statut ? ' selected' : ''}>${esc(l)}</option>`).join('')}
+      <td><select class="statut-select" data-champ="statut" data-statut="${esc(valeurStatut(p))}">
+        ${optionsStatut.map(([k, l]) => `<option value="${k}"${k === valeurStatut(p) ? ' selected' : ''}>${esc(l)}</option>`).join('')}
       </select></td>
       <td><input class="saisie-don" data-champ="don" inputmode="decimal" value="${p.statut === 'don' && p.don ? esc(String(p.don).replace('.', ',')) : ''}" /></td>
       <td><input data-champ="remarque" value="${esc(p.remarque || '')}" title="${esc(p.benevole ? 'Saisi par ' + p.benevole : '')}" /></td>
@@ -627,10 +657,12 @@ function saisieTableau(e) {
   const id = ligne.dataset.id;
   const a = base.anneeCourante;
   const actuel = passage(id, a);
+  const etatAvant = `${valeurStatut(actuel)}|${actuel.don || 0}`;
   const valeurs = { modifieLe: maintenant(), source: 'pc', benevole: '' };
 
   if (champ === 'statut') {
-    valeurs.statut = e.target.value;
+    valeurs.statut = e.target.value === STATUT_COURRIER ? 'don' : e.target.value;
+    valeurs.mode = e.target.value === STATUT_COURRIER ? 'courrier' : '';
     valeurs.don = valeurs.statut === 'don' ? actuel.don : 0;
   } else if (champ === 'don') {
     const montant = lireMontant(e.target.value);
@@ -642,13 +674,18 @@ function saisieTableau(e) {
   }
   const p = ecrirePassage(id, a, valeurs);
   p.modifieLe = valeurs.modifieLe;
+  // Un don encore sans montant n'est pas noté : le changement l'est quand le montant est saisi
+  if (`${valeurStatut(p)}|${p.don || 0}` !== etatAvant && !(p.statut === 'don' && !p.don)) {
+    noterHistorique({ maisonId: id, annee: a, le: p.modifieLe, statut: p.statut, don: p.don || 0, mode: p.mode || '', qui: '', source: 'pc' });
+  }
 
   // Mise à jour locale de la ligne sans tout redessiner (garde le focus pour la saisie au clavier)
   const select = ligne.querySelector('[data-champ="statut"]');
-  select.value = p.statut;
-  select.dataset.statut = p.statut;
+  select.value = valeurStatut(p);
+  select.dataset.statut = valeurStatut(p);
   const don = ligne.querySelector('[data-champ="don"]');
   if (document.activeElement !== don || champ === 'statut') don.value = p.statut === 'don' && p.don ? String(p.don).replace('.', ',') : '';
+  if (champ === 'statut' && e.target.value === STATUT_COURRIER) don.focus();   // reste à saisir le montant
 
   enregistrer();
   rendreChiffresTournee();
@@ -1096,7 +1133,7 @@ function rendreCarte(cadrer) {
     if (pile.length === 1) {
       const m = pile[0], p = passage(m.id, a);
       mk = L.circleMarker([lat, lng], { radius: 8, weight: 2, color: '#fff', fillOpacity: m.posApprochee ? .55 : .95, fillColor: COULEURS[p.statut] || COULEURS.autre });
-      mk.bindTooltip(`${esc(adresse(m))} — ${esc(m.nom)}<br>${esc(STATUTS[p.statut])}${p.statut === 'don' ? ' ' + euros(p.don) : ''}`);
+      mk.bindTooltip(`${esc(adresse(m))} — ${esc(m.nom)}<br>${esc(libelleStatut(p))}${p.statut === 'don' ? ' ' + euros(p.don) : ''}`);
       mk.on('click', () => ouvrirDialogueMaison(m.id));
     } else {
       mk = L.marker([lat, lng], { icon: L.divIcon({ className: '', html: `<div class="pile-carte">${pile.length}</div>`, iconSize: [30, 30] }) });
@@ -1237,7 +1274,7 @@ function exporterTerrain() {
 // IMPORT D'UN RETOUR (aperçu puis intégration)
 // ============================================================
 function decrire(p, etat, nom, lieuAdresse, infos) {
-  const morceaux = [STATUTS[p.statut] || p.statut];
+  const morceaux = [libelleStatut(p)];
   if (p.statut === 'don') morceaux[0] += ' ' + euros(p.don);
   if (lieuAdresse) morceaux.push('Adresse : ' + lieuAdresse);
   if (infos) morceaux.push('Infos : ' + infos);
@@ -1344,6 +1381,14 @@ function appliquerRetour() {
       nbNouvelles++;
     }
   });
+  // Les changements du terrain sont gardés même pour les lignes décochées : ils ont bien eu lieu
+  for (const r of [...(retour.maisons || []), ...(retour.nouvelles || [])]) {
+    if (!maison(r.id)) continue;
+    const changements = r.changements || (r.passage && r.passage.modifieLe && r.passage.statut !== 'a_visiter' ? [r.passage] : []);
+    for (const c of changements) {
+      noterHistorique({ maisonId: r.id, annee, le: c.le || c.modifieLe, statut: c.statut, don: c.don || 0, mode: '', qui: retour.benevole || '', source: 'terrain' });
+    }
+  }
   journaliser('retour', { envoyeLe: retour.envoyeLe, benevole: retour.benevole, maj: nbMaj, nouvelles: nbNouvelles }, retour.tourneeId, annee);
   $('dlg-retour').close();
   retourEnCours = null;
@@ -1380,7 +1425,7 @@ function exporterCsv() {
   for (const t of base.tournees) {
     for (const m of trierMaisons(maisonsDe(t.id))) {
       const p = passage(m.id, a), p1 = passage(m.id, a - 1);
-      lignes.push([t.nom, m.commune, m.lieu, m.numero, m.voie, m.nom, ETATS[m.etat] || m.etat, m.nbCalendriers ?? 1, STATUTS[p.statut],
+      lignes.push([t.nom, m.commune, m.lieu, m.numero, m.voie, m.nom, ETATS[m.etat] || m.etat, m.nbCalendriers ?? 1, libelleStatut(p),
         p.statut === 'don' ? String(p.don).replace('.', ',') : '', p.remarque || '',
         p1.statut === 'don' ? String(p1.don).replace('.', ',') : '', p.benevole || '', m.lat ?? '', m.lng ?? '']);
     }
@@ -1836,6 +1881,46 @@ function enregistrerLieux() {
 }
 
 // ============================================================
+// RECHERCHE DANS L'HISTORIQUE DES CHANGEMENTS
+// ============================================================
+const NB_MAX_HISTORIQUE = 50;
+
+function ouvrirHistorique() {
+  $('historique-recherche').value = '';
+  rendreHistorique();
+  $('dlg-historique').showModal();
+  $('historique-recherche').focus();
+}
+
+function rendreHistorique() {
+  const q = normaliser($('historique-recherche').value);
+  if (q.length < 2) {
+    $('historique-resume').textContent = `${base.historique.length} changement(s) enregistré(s). Tapez au moins 2 lettres : habitant, rue ou lieu-dit.`;
+    $('historique-liste').innerHTML = '';
+    return;
+  }
+  const parMaison = new Map();
+  for (const h of base.historique) {
+    if (!parMaison.has(h.maisonId)) parMaison.set(h.maisonId, []);
+    parMaison.get(h.maisonId).push(h);
+  }
+  const trouvees = [...parMaison.entries()]
+    .map(([id, liste]) => ({ m: maison(id), liste: liste.sort((a, b) => String(a.le).localeCompare(String(b.le))) }))
+    .filter(x => x.m && [x.m.nom, x.m.numero, x.m.voie, x.m.lieu, x.m.commune].some(v => normaliser(v).includes(q)))
+    .sort((a, b) => String(b.liste[b.liste.length - 1].le).localeCompare(String(a.liste[a.liste.length - 1].le)));
+  $('historique-resume').textContent = trouvees.length > NB_MAX_HISTORIQUE
+    ? `${trouvees.length} maisons trouvées, ${NB_MAX_HISTORIQUE} affichées : précisez la recherche.`
+    : `${trouvees.length} maison(s) trouvée(s).`;
+  $('historique-liste').innerHTML = trouvees.slice(0, NB_MAX_HISTORIQUE).map(({ m, liste }) => {
+    const t = tournee(m.tourneeId);
+    return `<article class="historique-maison">
+      <b>${esc(adresse(m))}</b> — ${esc(m.nom)} <span class="discret">${esc(t ? t.nom : '')}</span>
+      <ul>${liste.map(h => `<li><span class="discret">${dateCourte(h.le)}</span> ${esc(libelleStatut(h))}${h.statut === 'don' ? ' ' + euros(h.don) : ''} <span class="discret">${esc(h.source === 'pc' ? 'PC' : (h.qui || 'Terrain'))}</span></li>`).join('')}</ul>
+    </article>`;
+  }).join('') || '<p class="discret">Aucun changement pour cette recherche.</p>';
+}
+
+// ============================================================
 // ANNÉE DE CAMPAGNE
 // ============================================================
 function changerAnnee(delta) {
@@ -1925,6 +2010,7 @@ async function action(nom, cible) {
     case 'ouvrir-gps': document.querySelectorAll('dialog[open]').forEach(d => d.close()); ouvrirGps(null); break;
     case 'appliquer-rues': appliquerRues(); break;
     case 'annuler-manuel': annulerManuel(Number(cible.dataset.i)); break;
+    case 'ouvrir-historique': document.querySelectorAll('dialog[open]').forEach(d => d.close()); ouvrirHistorique(); break;
     case 'tout-cocher': cocherTout(true); break;
     case 'tout-decocher': cocherTout(false); break;
     case 'placer-selection': placerSelection(); break;
@@ -1952,6 +2038,7 @@ function initEvenements() {
     }
   });
 
+  $('historique-recherche').addEventListener('input', rendreHistorique);
   $('maisons-corps').addEventListener('change', saisieTableau);
   $('maisons-corps').addEventListener('change', (e) => {
     if (!e.target.classList.contains('choix-placement')) return;
@@ -1975,7 +2062,7 @@ function initEvenements() {
     minuteur = setTimeout(() => { rechercheMaison = e.target.value.trim(); rendreMaisons(); }, 150);
   });
   $('filtre-statut').innerHTML = '<option value="">Tous les statuts</option>' +
-    Object.entries(STATUTS).map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join('') +
+    OPTIONS_STATUT.map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join('') +
     '<option value="nouvelle">Nouvelles à valider</option>' +
     '<option value="sans_position">Sans position</option>' +
     '<option value="approchee">Position approchée (≈)</option>';

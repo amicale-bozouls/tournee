@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.2.6';
+const APP_VERSION = '0.2.7';
 const CLE_STOCKAGE = 'tournee_terrain_v2';
 const CLE_BENEVOLE = 'tournee_terrain_benevole';
 const CLE_MISE_A_JOUR = 'tournee_terrain_maj';
@@ -207,6 +207,7 @@ function preparerMaison(m) {
     cote: m.cote === 'avant' ? 'avant' : 'apres',
     posApprochee: !!m.posApprochee,
     creeLe: m.creeLe || '',
+    changements: Array.isArray(m.changements) ? m.changements : [],
     passage: {
       statut: (m.passage && STATUTS[m.passage.statut]) ? m.passage.statut : 'a_visiter',
       don: lireMontant(m.passage && m.passage.don),
@@ -226,6 +227,7 @@ function importerTournee(donnees) {
       const locales = new Map(etat.maisons.map(m => [m.id, m]));
       for (const m of maisons) {
         const l = locales.get(m.id);
+        if (l) m.changements = l.changements;
         if (l && l.passage.modifieLe && (!m.passage.modifieLe || l.passage.modifieLe > m.passage.modifieLe)) {
           m.passage = l.passage;
           m.etat = l.etat;
@@ -335,7 +337,8 @@ function construireRetour() {
     benevole: etat.benevole || '',
     maisons: modifiees.filter(m => !m.nouvelle).map(m => ({
       id: m.id, passage: m.passage, etat: m.etat, nom: m.nom, lat: m.lat, lng: m.lng,
-      numero: m.numero, voie: m.voie, lieu: m.lieu, infos: m.infos, posApprochee: m.posApprochee
+      numero: m.numero, voie: m.voie, lieu: m.lieu, infos: m.infos, posApprochee: m.posApprochee,
+      changements: m.changements
     })),
     nouvelles: modifiees.filter(m => m.nouvelle).map(m => ({ ...m, aValider: true }))
   };
@@ -443,15 +446,23 @@ function trouverMaison(id) {
   return etat.maisons.find(m => m.id === id);
 }
 
+// Historique des changements : jamais affiché ici, envoyé avec le retour et consultable sur le PC
+function noterChangement(m, avant) {
+  if (avant.statut === m.passage.statut && (avant.don || 0) === (m.passage.don || 0)) return;
+  m.changements.push({ le: m.passage.modifieLe, statut: m.passage.statut, don: m.passage.don || 0 });
+}
+
 function changerStatut(id, statut) {
   const m = trouverMaison(id);
   if (!m) return;
   if (statut === 'don') { ouvrirFeuilleDon(id); return; }
   // Un 2e appui sur le statut actif l'annule
   const nouveau = m.passage.statut === statut ? 'a_visiter' : statut;
+  const avant = { ...m.passage };
   m.passage.statut = nouveau;
   m.passage.don = 0;
   m.passage.modifieLe = maintenant();
+  noterChangement(m, avant);
   sauverEtat();
   afficherListe();
   afficherCompteurs();
@@ -481,9 +492,11 @@ function validerDon() {
   if (!m) return;
   const montant = lireMontant($('don-montant').value);
   if (montant <= 0 && !confirm('Montant à 0 €. Enregistrer quand même comme « Don » ?')) return;
+  const avant = { ...m.passage };
   m.passage.statut = 'don';
   m.passage.don = montant;
   m.passage.modifieLe = maintenant();
+  noterChangement(m, avant);
   sauverEtat();
   fermerFeuilles();
   afficherListe();
@@ -617,7 +630,9 @@ function enregistrerMaison() {
   if (maisonEnCours) {
     const m = trouverMaison(maisonEnCours);
     Object.assign(m, valeurs);
+    const avant = m.passage;
     m.passage = passage;
+    noterChangement(m, avant);
     if (gpsEnCours) {
       m.lat = gpsEnCours.lat;
       m.lng = gpsEnCours.lng;
@@ -641,6 +656,7 @@ function enregistrerMaison() {
       voisineId: aCote ? aCote.id : '',
       cote: $('m-cote').value,
       creeLe: maintenant(),
+      changements: passage.statut !== 'a_visiter' ? [{ le: passage.modifieLe, statut: passage.statut, don: passage.don }] : [],
       nouvelle: true,
       passage
     }));

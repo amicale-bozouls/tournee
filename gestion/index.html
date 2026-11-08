@@ -303,6 +303,20 @@
   </form>
 </dialog>
 
+<!-- ======= FENÊTRE : HISTORIQUE DES CHANGEMENTS ======= -->
+<dialog id="dlg-historique" class="fenetre fenetre-large">
+  <form method="dialog">
+    <h2>Historique des changements</h2>
+    <input id="historique-recherche" type="search" class="historique-recherche" placeholder="🔍 Habitant, rue, lieu-dit…" autocomplete="off" />
+    <p id="historique-resume" class="discret"></p>
+    <div id="historique-liste" class="retour-tableau"></div>
+    <div class="fenetre-actions">
+      <span class="espace"></span>
+      <button type="button" class="btn btn-primaire" data-action="fermer-dialogue">Fermer</button>
+    </div>
+  </form>
+</dialog>
+
 <!-- ======= FENÊTRE : MENU BASE ======= -->
 <dialog id="dlg-base" class="fenetre">
   <form method="dialog">
@@ -315,6 +329,7 @@
       <button type="button" class="btn" data-action="importer-access">📥 Importer la liste Access (Excel)</button>
       <button type="button" class="btn" data-action="ouvrir-lieux">🏘 Communes et hameaux</button>
       <button type="button" class="btn" data-action="ouvrir-gps">🌍 Rues et positions GPS</button>
+      <button type="button" class="btn" data-action="ouvrir-historique">🕘 Historique des changements</button>
       <button type="button" class="btn" data-action="importer-v1">📥 Importer une sauvegarde de l'ancienne application</button>
       <button type="button" class="btn" data-action="changer-base">📂 Ouvrir une autre base</button>
     </div>

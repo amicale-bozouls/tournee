@@ -141,7 +141,7 @@ h3 { font-size: 14px; margin-top: 12px; color: var(--texte-2); }
 .pastille { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
 .etiquette { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 10px; background: #eceff3; color: var(--texte-2); }
 .etiquette-nouvelle { background: #fff3cd; color: #7a5a00; }
-.statut-select[data-statut="don"] { color: var(--st-don); font-weight: 600; }
+.statut-select[data-statut="don"], .statut-select[data-statut="don_courrier"] { color: var(--st-don); font-weight: 600; }
 .statut-select[data-statut="absent"] { color: var(--st-absent); font-weight: 600; }
 .statut-select[data-statut="repasser"] { color: var(--st-repasser); font-weight: 600; }
 .statut-select[data-statut="boite_lettres"] { color: var(--st-boite_lettres); font-weight: 600; }
@@ -185,6 +185,10 @@ h3 { font-size: 14px; margin-top: 12px; color: var(--texte-2); }
 .menu-liste { display: flex; flex-direction: column; gap: 6px; }
 .menu-liste .btn { text-align: left; }
 .journal { list-style: none; max-height: 200px; overflow-y: auto; font-size: 12px; color: var(--texte-2); display: grid; gap: 4px; }
+
+.historique-recherche { padding: 8px 10px; border: 1px solid var(--bordure); border-radius: 8px; }
+.historique-maison { padding: 8px 0; border-bottom: 1px solid #eef1f4; }
+.historique-maison ul { list-style: none; margin-top: 4px; padding-left: 12px; display: grid; gap: 2px; font-size: 13px; }
 
 /* ---------- Toast ---------- */
 .toast {
