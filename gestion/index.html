@@ -144,6 +144,13 @@
 <dialog id="dlg-maison" class="fenetre fenetre-large">
   <form method="dialog">
     <h2 id="dlg-maison-titre">Maison</h2>
+    <label class="champ" id="m-cote-ligne" hidden>
+      <span>Place dans la tournée</span>
+      <select id="m-cote">
+        <option value="apres">Juste après cette maison</option>
+        <option value="avant">Juste avant cette maison</option>
+      </select>
+    </label>
     <div class="grille">
       <label class="champ"><span>Commune</span><input id="m-commune" list="liste-communes" /></label>
       <label class="champ"><span>Lieu-dit</span><input id="m-lieu" list="liste-lieux" /></label>

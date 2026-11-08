@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.3.1';
+const APP_VERSION = '0.4.0';
 const FORMAT_BASE = 'base-tournees-bozouls';
 const FORMAT_TOURNEE = 'tournee-bozouls';
 const FORMAT_RETOUR = 'retour-tournee-bozouls';
@@ -46,6 +46,7 @@ let vueTournee = 'tableau';
 let rechercheMaison = '';
 let filtreStatut = '';
 let maisonEditee = null;      // id (null = nouvelle)
+let voisineEditee = null;     // id de la maison à côté de laquelle on en ajoute une
 let gpsDialogue = null;       // { lat, lng, score, label } trouvé dans la fiche maison
 let retourEnCours = null;     // { retour, lignes }
 let carte = null, coucheCarte = null;
@@ -216,15 +217,39 @@ function adresse(m) {
   return [m.numero, m.voie].filter(Boolean).join(' ') || m.lieu || 'Sans adresse';
 }
 
+// Replace les maisons ajoutées « à côté » d'une autre, quel que soit leur numéro
+function placerVoisines(triees) {
+  const ids = new Set(triees.map(m => m.id));
+  const liees = new Map(), racines = [];
+  for (const m of triees) {
+    if (m.voisineId && m.voisineId !== m.id && ids.has(m.voisineId)) {
+      if (!liees.has(m.voisineId)) liees.set(m.voisineId, []);
+      liees.get(m.voisineId).push(m);
+    } else racines.push(m);
+  }
+  const sortie = [], vues = new Set();
+  const poser = (m) => {
+    if (vues.has(m.id)) return;
+    vues.add(m.id);
+    const proches = (liees.get(m.id) || []).sort((a, b) => (a.creeLe || '').localeCompare(b.creeLe || ''));
+    proches.filter(x => x.cote === 'avant').forEach(poser);
+    sortie.push(m);
+    proches.filter(x => x.cote !== 'avant').reverse().forEach(poser);   // la dernière ajoutée reste collée à sa voisine
+  };
+  racines.forEach(poser);
+  triees.forEach(poser);   // sécurité : aucune maison ne doit disparaître
+  return sortie;
+}
+
 function trierMaisons(liste) {
-  return [...liste].sort((a, b) =>
+  return placerVoisines([...liste].sort((a, b) =>
     (a.ordreLieu || 0) - (b.ordreLieu || 0) ||   // l'ordre de passage prime, même à cheval sur deux communes
     normaliser(a.commune).localeCompare(normaliser(b.commune)) ||
     normaliser(a.lieu).localeCompare(normaliser(b.lieu)) ||
     (a.ordreRue || 0) - (b.ordreRue || 0) ||
     normaliser(a.voie).localeCompare(normaliser(b.voie)) ||
     String(a.numero || '').localeCompare(String(b.numero || ''), 'fr', { numeric: true })
-  );
+  ));
 }
 
 function statsTournee(tourneeId, annee) {
@@ -540,7 +565,7 @@ function rendreMaisons() {
       </select></td>
       <td><input class="saisie-don" data-champ="don" inputmode="decimal" value="${p.statut === 'don' && p.don ? esc(String(p.don).replace('.', ',')) : ''}" /></td>
       <td><input data-champ="remarque" value="${esc(p.remarque || '')}" title="${esc(p.benevole ? 'Saisi par ' + p.benevole : '')}" /></td>
-      <td><button class="btn-icone" data-action="modifier-maison" title="Fiche maison">✏️</button></td>
+      <td style="white-space:nowrap"><button class="btn-icone" data-action="ajouter-a-cote" title="Ajouter une maison à côté">➕</button><button class="btn-icone" data-action="modifier-maison" title="Fiche maison">✏️</button></td>
     </tr>`;
   }
   $('maisons-corps').innerHTML = html ||
@@ -649,17 +674,21 @@ function remplirListes() {
   $('liste-voies').innerHTML = options(ens.voies);
 }
 
-function ouvrirDialogueMaison(id) {
+function ouvrirDialogueMaison(id, voisineId = null) {
   maisonEditee = id;
   const m = id ? maison(id) : null;
+  const voisine = voisineId ? maison(voisineId) : null;
+  voisineEditee = voisine ? voisine.id : null;
   gpsDialogue = null;
   remplirListes();
   $('m-etat').innerHTML = Object.entries(ETATS).map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join('');
   $('m-tournee').innerHTML = base.tournees.map(t => `<option value="${esc(t.id)}">${esc(t.nom)}</option>`).join('');
 
   // Nouvelle maison : on reprend commune / lieu / voie de la dernière maison de la tournée
-  const modele = m || trierMaisons(maisonsDe(tourneeActiveId)).pop() || {};
-  $('dlg-maison-titre').textContent = m ? adresse(m) : 'Nouvelle maison';
+  const modele = m || voisine || trierMaisons(maisonsDe(tourneeActiveId)).pop() || {};
+  $('dlg-maison-titre').textContent = m ? adresse(m) : (voisine ? `Nouvelle maison à côté de : ${adresse(voisine)}` : 'Nouvelle maison');
+  $('m-cote-ligne').hidden = !voisine;
+  $('m-cote').value = 'apres';
   $('m-commune').value = modele.commune || '';
   $('m-lieu').value = modele.lieu || '';
   $('m-ordre-lieu').value = modele.ordreLieu || '';
@@ -668,10 +697,12 @@ function ouvrirDialogueMaison(id) {
   $('m-ordre-rue').value = modele.ordreRue || '';
   $('m-nom').value = m ? m.nom || '' : '';
   $('m-etat').value = m ? m.etat || 'habitee' : 'habitee';
-  $('m-tournee').value = m ? m.tourneeId : tourneeActiveId;
+  $('m-tournee').value = m ? m.tourneeId : (voisine ? voisine.tourneeId : tourneeActiveId);
   $('m-infos').value = m ? m.infos || '' : '';
   $('m-calendriers').value = m ? m.nbCalendriers ?? 1 : 1;
-  $('m-gps').textContent = m && m.lat != null ? `Position : ${m.lat.toFixed(5)}, ${m.lng.toFixed(5)}` : 'Position : —';
+  $('m-gps').textContent = m && m.lat != null
+    ? `Position${m.posApprochee ? ' approchée' : ''} : ${m.lat.toFixed(5)}, ${m.lng.toFixed(5)}`
+    : (voisine && voisine.lat != null ? 'Position : approchée (voisine)' : 'Position : —');
   $('m-gps-resultat').textContent = m && m.geoLabel ? `BAN : ${m.geoLabel}` : '';
 
   const passages = m ? base.passages.filter(p => p.maisonId === m.id && p.statut !== 'a_visiter').sort((x, y) => y.annee - x.annee) : [];
@@ -698,14 +729,17 @@ function enregistrerMaison() {
     nbCalendriers: Math.max(parseInt($('m-calendriers').value) || 0, 0)
   };
   if (!valeurs.voie && !valeurs.lieu) { alert('Indiquez au moins une voie ou un lieu-dit.'); return; }
-  if (gpsDialogue) Object.assign(valeurs, { lat: gpsDialogue.lat, lng: gpsDialogue.lng, geoScore: gpsDialogue.score, geoLabel: gpsDialogue.label });
+  if (gpsDialogue) Object.assign(valeurs, { lat: gpsDialogue.lat, lng: gpsDialogue.lng, geoScore: gpsDialogue.score, geoLabel: gpsDialogue.label, posApprochee: false });
 
   if (maisonEditee) {
     const m = maison(maisonEditee);
     Object.assign(m, valeurs);
     m.nouvelle = false;   // une maison relue et enregistrée sur le PC est validée
   } else {
-    base.maisons.push({ id: uid('m-'), lat: null, lng: null, nouvelle: false, refExterne: '', creeLe: maintenant(), ...valeurs });
+    const voisine = voisineEditee ? maison(voisineEditee) : null;
+    const position = voisine && voisine.lat != null ? { lat: voisine.lat, lng: voisine.lng, posApprochee: true } : {};
+    const placement = voisine ? { voisineId: voisine.id, cote: $('m-cote').value } : {};
+    base.maisons.push({ id: uid('m-'), lat: null, lng: null, nouvelle: false, refExterne: '', creeLe: maintenant(), ...position, ...placement, ...valeurs });
   }
   $('dlg-maison').close();
   enregistrer();
@@ -825,6 +859,7 @@ function exporterTerrain() {
       return {
         id: m.id, commune: m.commune, lieu: m.lieu, ordreLieu: m.ordreLieu, numero: m.numero, voie: m.voie, ordreRue: m.ordreRue,
         nom: m.nom, etat: m.etat, lat: m.lat, lng: m.lng, infos: m.infos,
+        voisineId: m.voisineId || '', cote: m.cote || 'apres', posApprochee: !!m.posApprochee, creeLe: m.creeLe || '',
         historique: base.passages
           .filter(x => x.maisonId === m.id && x.annee < a && x.annee >= a - NB_ANNEES_HISTORIQUE && x.statut !== 'a_visiter')
           .sort((x, y) => y.annee - x.annee)
@@ -842,9 +877,10 @@ function exporterTerrain() {
 // ============================================================
 // IMPORT D'UN RETOUR (aperçu puis intégration)
 // ============================================================
-function decrire(p, etat, nom) {
+function decrire(p, etat, nom, lieuAdresse) {
   const morceaux = [STATUTS[p.statut] || p.statut];
   if (p.statut === 'don') morceaux[0] += ' ' + euros(p.don);
+  if (lieuAdresse) morceaux.push('Adresse : ' + lieuAdresse);
   if (p.remarque) morceaux.push('« ' + p.remarque + ' »');
   if (etat) morceaux.push(ETATS[etat] || etat);
   if (nom) morceaux.push('Habitant : ' + nom);
@@ -875,9 +911,11 @@ async function lireRetour(f) {
     const changeEtat = r.etat && r.etat !== m.etat;
     const changeGps = r.lat != null && (m.lat == null || Math.abs(r.lat - m.lat) > 1e-6 || Math.abs(r.lng - m.lng) > 1e-6);
     const changePassage = apres.statut !== avant.statut || (apres.don || 0) !== (avant.don || 0) || (apres.remarque || '') !== (avant.remarque || '');
-    if (!changeNom && !changeEtat && !changeGps && !changePassage) { aJour++; continue; }
+    // Absent des retours envoyés par les versions terrain antérieures à 0.2.0
+    const changeAdresse = r.voie !== undefined && (r.numero !== (m.numero || '') || r.voie !== (m.voie || '') || r.lieu !== (m.lieu || ''));
+    if (!changeNom && !changeEtat && !changeGps && !changePassage && !changeAdresse) { aJour++; continue; }
     const pcPlusRecent = avant.modifieLe && apres.modifieLe && avant.modifieLe > apres.modifieLe;
-    lignes.push({ type: 'maison', r, m, avant, apres, changeNom, changeEtat, changeGps, changePassage, pcPlusRecent, coche: !pcPlusRecent });
+    lignes.push({ type: 'maison', r, m, avant, apres, changeNom, changeEtat, changeGps, changePassage, changeAdresse, pcPlusRecent, coche: !pcPlusRecent });
   }
   for (const n of retour.nouvelles || []) {
     if (maison(n.id)) { aJour++; continue; }   // déjà intégrée lors d'un précédent retour
@@ -905,8 +943,8 @@ async function lireRetour(f) {
     }
     return `<tr><td><input type="checkbox" data-ligne="${i}" ${l.coche ? 'checked' : ''} /></td>
       <td><b>${esc(adresse(l.m))}</b><div class="discret">${esc(l.m.nom)}</div></td>
-      <td class="discret">${esc(decrire(l.avant, l.changeEtat ? l.m.etat : null, l.changeNom ? l.m.nom || '—' : null))}${l.pcPlusRecent ? '<br>⚠️ modifié sur le PC le ' + dateCourte(l.avant.modifieLe) : ''}</td>
-      <td>${esc(decrire(l.apres, l.changeEtat ? l.r.etat : null, l.changeNom ? l.r.nom || '—' : null))}${l.changeGps ? ' · 📍 position' : ''}</td></tr>`;
+      <td class="discret">${esc(decrire(l.avant, l.changeEtat ? l.m.etat : null, l.changeNom ? l.m.nom || '—' : null, l.changeAdresse ? [l.m.numero, l.m.voie, l.m.lieu].filter(Boolean).join(' ') || '—' : null))}${l.pcPlusRecent ? '<br>⚠️ modifié sur le PC le ' + dateCourte(l.avant.modifieLe) : ''}</td>
+      <td>${esc(decrire(l.apres, l.changeEtat ? l.r.etat : null, l.changeNom ? l.r.nom || '—' : null, l.changeAdresse ? [l.r.numero, l.r.voie, l.r.lieu].filter(Boolean).join(' ') || '—' : null))}${l.changeGps ? ' · 📍 position' : ''}</td></tr>`;
   }).join('') || '<tr><td colspan="4" class="vide">Rien de nouveau dans ce retour.</td></tr>';
   $('retour-tout').checked = lignes.every(l => l.coche || l.type === 'inconnue');
   $('dlg-retour').showModal();
@@ -925,7 +963,8 @@ function appliquerRetour() {
       }
       if (l.changeNom) l.m.nom = l.r.nom;
       if (l.changeEtat) l.m.etat = l.r.etat;
-      if (l.changeGps) { l.m.lat = l.r.lat; l.m.lng = l.r.lng; l.m.geoLabel = 'Relevé sur le terrain'; }
+      if (l.changeGps) { l.m.lat = l.r.lat; l.m.lng = l.r.lng; l.m.geoLabel = 'Relevé sur le terrain'; l.m.posApprochee = !!l.r.posApprochee; }
+      if (l.changeAdresse) { l.m.numero = l.r.numero; l.m.voie = l.r.voie; l.m.lieu = l.r.lieu; }
       nbMaj++;
     } else if (l.type === 'nouvelle') {
       const n = l.r;
@@ -933,7 +972,8 @@ function appliquerRetour() {
         id: n.id, tourneeId: retour.tourneeId, commune: n.commune || '', lieu: n.lieu || '',
         ordreLieu: Number(n.ordreLieu) || 0, numero: n.numero || '', voie: n.voie || '', ordreRue: Number(n.ordreRue) || 0,
         nom: n.nom || '', etat: n.etat || 'habitee', lat: n.lat ?? null, lng: n.lng ?? null, infos: n.infos || '',
-        nouvelle: true, refExterne: '', creeLe: maintenant()
+        nouvelle: true, refExterne: '', creeLe: n.creeLe || maintenant(),
+        voisineId: n.voisineId || '', cote: n.cote || 'apres', posApprochee: !!n.posApprochee
       });
       if (n.passage) {
         const p = ecrirePassage(n.id, annee, { ...n.passage, source: 'terrain', benevole: retour.benevole || '' });
@@ -1505,6 +1545,7 @@ async function action(nom, cible) {
     case 'supprimer-tournee': supprimerTournee(); break;
     case 'nouvelle-maison': ouvrirDialogueMaison(null); break;
     case 'modifier-maison': ouvrirDialogueMaison(cible.closest('tr[data-id]').dataset.id); break;
+    case 'ajouter-a-cote': ouvrirDialogueMaison(null, cible.closest('tr[data-id]').dataset.id); break;
     case 'enregistrer-maison': enregistrerMaison(); break;
     case 'supprimer-maison': supprimerMaison(); break;
     case 'geocoder-maison': geocoderMaisonDialogue(); break;

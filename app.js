@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.1.9';
+const APP_VERSION = '0.2.0';
 const CLE_STOCKAGE = 'tournee_terrain_v2';
 const CLE_BENEVOLE = 'tournee_terrain_benevole';
 const FORMAT_TOURNEE = 'tournee-bozouls';
@@ -41,6 +41,7 @@ let etat = null;
 let filtre = 'toutes';
 let recherche = '';
 let maisonEnCours = null;   // id de la maison ouverte dans une feuille (null = nouvelle)
+let voisineEnCours = null;  // id de la maison à côté de laquelle on en ajoute une
 let gpsEnCours = null;      // { lat, lng, precision } capturé dans la fiche
 let carte = null;
 let coucheMarqueurs = null;
@@ -123,15 +124,39 @@ function dernierHistorique(m) {
   return h[0] || null;
 }
 
+// Replace les maisons ajoutées « à côté » d'une autre, quel que soit leur numéro
+function placerVoisines(triees) {
+  const ids = new Set(triees.map(m => m.id));
+  const liees = new Map(), racines = [];
+  for (const m of triees) {
+    if (m.voisineId && m.voisineId !== m.id && ids.has(m.voisineId)) {
+      if (!liees.has(m.voisineId)) liees.set(m.voisineId, []);
+      liees.get(m.voisineId).push(m);
+    } else racines.push(m);
+  }
+  const sortie = [], vues = new Set();
+  const poser = (m) => {
+    if (vues.has(m.id)) return;
+    vues.add(m.id);
+    const proches = (liees.get(m.id) || []).sort((a, b) => (a.creeLe || '').localeCompare(b.creeLe || ''));
+    proches.filter(x => x.cote === 'avant').forEach(poser);
+    sortie.push(m);
+    proches.filter(x => x.cote !== 'avant').reverse().forEach(poser);   // la dernière ajoutée reste collée à sa voisine
+  };
+  racines.forEach(poser);
+  triees.forEach(poser);   // sécurité : aucune maison ne doit disparaître
+  return sortie;
+}
+
 function maisonsTriees() {
-  return [...etat.maisons].sort((a, b) =>
+  return placerVoisines([...etat.maisons].sort((a, b) =>
     (a.ordreLieu || 0) - (b.ordreLieu || 0) ||   // l'ordre de passage prime, même à cheval sur deux communes
     normaliser(a.commune).localeCompare(normaliser(b.commune)) ||
     normaliser(a.lieu).localeCompare(normaliser(b.lieu)) ||
     (a.ordreRue || 0) - (b.ordreRue || 0) ||
     normaliser(a.voie).localeCompare(normaliser(b.voie)) ||
     String(a.numero || '').localeCompare(String(b.numero || ''), 'fr', { numeric: true })
-  );
+  ));
 }
 
 // Une maison inhabitée / disparue n'a pas besoin d'être visitée
@@ -174,6 +199,10 @@ function preparerMaison(m) {
     infos: m.infos || '',
     historique: Array.isArray(m.historique) ? m.historique : [],
     nouvelle: !!m.nouvelle,
+    voisineId: m.voisineId || '',
+    cote: m.cote === 'avant' ? 'avant' : 'apres',
+    posApprochee: !!m.posApprochee,
+    creeLe: m.creeLe || '',
     passage: {
       statut: (m.passage && STATUTS[m.passage.statut]) ? m.passage.statut : 'a_visiter',
       don: lireMontant(m.passage && m.passage.don),
@@ -197,7 +226,10 @@ function importerTournee(donnees) {
           m.passage = l.passage;
           m.etat = l.etat;
           m.nom = l.nom;
-          if (l.lat != null) { m.lat = l.lat; m.lng = l.lng; }
+          m.numero = l.numero;
+          m.voie = l.voie;
+          m.lieu = l.lieu;
+          if (l.lat != null) { m.lat = l.lat; m.lng = l.lng; m.posApprochee = l.posApprochee; }
         }
         locales.delete(m.id);
       }
@@ -297,7 +329,8 @@ function construireRetour() {
     annee: etat.tournee.annee,
     benevole: etat.benevole || '',
     maisons: modifiees.filter(m => !m.nouvelle).map(m => ({
-      id: m.id, passage: m.passage, etat: m.etat, nom: m.nom, lat: m.lat, lng: m.lng
+      id: m.id, passage: m.passage, etat: m.etat, nom: m.nom, lat: m.lat, lng: m.lng,
+      numero: m.numero, voie: m.voie, lieu: m.lieu, posApprochee: m.posApprochee
     })),
     nouvelles: modifiees.filter(m => m.nouvelle).map(m => ({ ...m, aValider: true }))
   };
@@ -438,22 +471,27 @@ function remplirListesSaisie() {
   $('liste-lieux').innerHTML = [...lieux].sort().map(v => `<option value="${esc(v)}">`).join('');
 }
 
-function ouvrirFicheMaison(id) {
+function ouvrirFicheMaison(id, voisineId = null) {
   const m = id ? trouverMaison(id) : null;
+  const voisine = voisineId ? trouverMaison(voisineId) : null;
   maisonEnCours = id || null;
+  voisineEnCours = voisine ? voisine.id : null;
   gpsEnCours = m && m.lat != null ? { lat: m.lat, lng: m.lng, precision: null } : null;
   remplirListesSaisie();
 
-  $('maison-titre').textContent = m ? adresseMaison(m) : 'Nouvelle maison';
+  $('maison-titre').textContent = m ? adresseMaison(m) : (voisine ? `Nouvelle maison à côté de : ${adresseMaison(voisine)}` : 'Nouvelle maison');
+  $('m-cote-ligne').hidden = !voisine;
+  $('m-cote').value = 'apres';
   const historique = m ? (m.historique || []).slice().sort((a, b) => b.annee - a.annee)
     .map(h => `${h.annee} : ${h.statut === 'don' ? euros(h.don) : (STATUTS[h.statut] ? STATUTS[h.statut].libelle : h.statut)}`).join(' · ') : '';
   $('maison-historique').textContent = [m && m.infos, historique].filter(Boolean).join(' — ');
 
   // Pour une nouvelle maison, on propose la rue / le lieu de la dernière maison saisie
-  const derniere = m ? null : etat.maisons.filter(x => x.passage.modifieLe).sort((a, b) => b.passage.modifieLe.localeCompare(a.passage.modifieLe))[0];
+  const derniere = m || voisine ? null : etat.maisons.filter(x => x.passage.modifieLe).sort((a, b) => b.passage.modifieLe.localeCompare(a.passage.modifieLe))[0];
+  const modele = voisine || derniere;
   $('m-numero').value = m ? m.numero : '';
-  $('m-voie').value = m ? m.voie : (derniere ? derniere.voie : '');
-  $('m-lieu').value = m ? m.lieu : (derniere ? derniere.lieu : '');
+  $('m-voie').value = m ? m.voie : (modele ? modele.voie : '');
+  $('m-lieu').value = m ? m.lieu : (modele ? modele.lieu : '');
   $('m-nom').value = m ? m.nom : '';
   $('m-statut').value = m ? m.passage.statut : 'a_visiter';
   $('m-don').value = m && m.passage.don > 0 ? String(m.passage.don).replace('.', ',') : '';
@@ -463,13 +501,19 @@ function ouvrirFicheMaison(id) {
   afficherGpsFiche();
 
   ouvrirFeuille('feuille-maison');
-  if (!m) capturerGps(true);
+  if (!m && !voisine) capturerGps(true);
 }
 
 function afficherGpsFiche() {
-  $('m-gps-texte').textContent = gpsEnCours
-    ? `Position : ✓${gpsEnCours.precision ? ` (± ${Math.round(gpsEnCours.precision)} m)` : ''}`
-    : 'Position : —';
+  const m = maisonEnCours ? trouverMaison(maisonEnCours) : null;
+  if (gpsEnCours) {
+    $('m-gps-texte').textContent = gpsEnCours.precision
+      ? `Position : ✓ (± ${Math.round(gpsEnCours.precision)} m)`
+      : (m && m.posApprochee ? 'Position : approchée' : 'Position : ✓');
+  } else {
+    const voisine = voisineEnCours ? trouverMaison(voisineEnCours) : null;
+    $('m-gps-texte').textContent = voisine && voisine.lat != null ? 'Position : approchée (voisine)' : 'Position : —';
+  }
 }
 
 function capturerGps(silencieux = false) {
@@ -535,10 +579,16 @@ function enregistrerMaison() {
     const m = trouverMaison(maisonEnCours);
     Object.assign(m, valeurs);
     m.passage = passage;
-    if (gpsEnCours) { m.lat = gpsEnCours.lat; m.lng = gpsEnCours.lng; }
+    if (gpsEnCours) {
+      m.lat = gpsEnCours.lat;
+      m.lng = gpsEnCours.lng;
+      if (gpsEnCours.precision) m.posApprochee = false;
+    }
   } else {
-    // Rattacher la nouvelle maison à la commune / aux ordres de la même rue
-    const voisine = etat.maisons.find(x => normaliser(x.voie) === normaliser(valeurs.voie) && valeurs.voie)
+    // Rattacher la nouvelle maison à sa voisine, sinon à la commune / aux ordres de la même rue
+    const aCote = voisineEnCours ? trouverMaison(voisineEnCours) : null;
+    const voisine = aCote
+                 || etat.maisons.find(x => normaliser(x.voie) === normaliser(valeurs.voie) && valeurs.voie)
                  || etat.maisons.find(x => normaliser(x.lieu) === normaliser(valeurs.lieu) && valeurs.lieu);
     etat.maisons.push(preparerMaison({
       ...valeurs,
@@ -546,8 +596,12 @@ function enregistrerMaison() {
       commune: voisine ? voisine.commune : '',
       ordreLieu: voisine ? voisine.ordreLieu : 999,
       ordreRue: voisine ? voisine.ordreRue : 999,
-      lat: gpsEnCours ? gpsEnCours.lat : null,
-      lng: gpsEnCours ? gpsEnCours.lng : null,
+      lat: gpsEnCours ? gpsEnCours.lat : (aCote ? aCote.lat : null),
+      lng: gpsEnCours ? gpsEnCours.lng : (aCote ? aCote.lng : null),
+      posApprochee: !gpsEnCours && !!aCote && aCote.lat != null,
+      voisineId: aCote ? aCote.id : '',
+      cote: $('m-cote').value,
+      creeLe: maintenant(),
       nouvelle: true,
       passage
     }));
@@ -632,6 +686,7 @@ function carteMaisonHTML(m) {
           ${n1 ? `<div class="maison-n1">${esc(n1)}</div>` : ''}
         </div>
         <div class="maison-statut">${statutTexte}</div>
+        <button class="btn-detail" data-action="a-cote" aria-label="Ajouter une maison à côté">➕</button>
         <button class="btn-detail" data-action="detail" aria-label="Détail">✏️</button>
       </div>
       ${inactive ? '' : `<div class="actions-rapides">
@@ -710,10 +765,12 @@ function afficherMarqueurs(cadrer) {
       fillColor: COULEURS[m.passage.statut] || COULEURS.autre
     });
     const statut = m.passage.statut === 'don' ? `Don ${euros(m.passage.don)}` : STATUTS[m.passage.statut].libelle;
-    marqueur.bindPopup(`<div class="popup-carte"><b>${esc(adresseMaison(m))}</b>${esc(m.nom)}<br>${esc(statut)}<button type="button">Ouvrir</button></div>`);
-    // Leaflet bloque la propagation des clics dans les popups : écouteur direct
+    marqueur.bindPopup(`<div class="popup-carte"><b>${esc(adresseMaison(m))}</b>${esc(m.nom)}<br>${esc(statut)}<button type="button" data-ouvrir>Ouvrir</button><button type="button" data-a-cote>➕ Maison à côté</button></div>`);
+    // Leaflet bloque la propagation des clics dans les popups : écouteurs directs
     marqueur.on('popupopen', (e) => {
-      e.popup.getElement().querySelector('button').onclick = () => { carte.closePopup(); ouvrirFicheMaison(m.id); };
+      const bulle = e.popup.getElement();
+      bulle.querySelector('[data-ouvrir]').onclick = () => { carte.closePopup(); ouvrirFicheMaison(m.id); };
+      bulle.querySelector('[data-a-cote]').onclick = () => { carte.closePopup(); ouvrirFicheMaison(null, m.id); };
     });
     marqueur.addTo(coucheMarqueurs);
     points.push([m.lat, m.lng]);
@@ -779,6 +836,7 @@ function initEvenements() {
       case 'charger-demo': chargerDemo(); break;
       case 'statut': changerStatut(idMaison, cible.dataset.statut); break;
       case 'detail': ouvrirFicheMaison(idMaison); break;
+      case 'a-cote': ouvrirFicheMaison(null, idMaison); break;
       case 'nouvelle-maison': ouvrirFicheMaison(null); break;
       case 'valider-don': validerDon(); break;
       case 'enregistrer-maison': enregistrerMaison(); break;
