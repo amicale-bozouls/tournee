@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.3.0';
+const APP_VERSION = '0.3.1';
 const FORMAT_BASE = 'base-tournees-bozouls';
 const FORMAT_TOURNEE = 'tournee-bozouls';
 const FORMAT_RETOUR = 'retour-tournee-bozouls';
@@ -13,7 +13,7 @@ const SCHEMA_VERSION = 1;
 const NB_ANNEES_HISTORIQUE = 3;   // années précédentes envoyées au terrain
 
 const STATUTS = {
-  a_visiter:     'À visiter',
+  a_visiter:     'À passer',
   don:           'Don',
   absent:        'Absent',
   repasser:      'À repasser',
@@ -1439,7 +1439,7 @@ function enregistrerLieux() {
 function changerAnnee(delta) {
   const nouvelle = base.anneeCourante + delta;
   const dejaUtilisee = base.passages.some(p => p.annee === nouvelle);
-  if (delta > 0 && !dejaUtilisee && !confirm(`Démarrer la campagne ${nouvelle} ?\n\nToutes les maisons repartent « à visiter » ; les dons de ${nouvelle - 1} apparaîtront en historique. Rien n'est effacé : vous pourrez revenir à ${base.anneeCourante} avec ◀.`)) return;
+  if (delta > 0 && !dejaUtilisee && !confirm(`Démarrer la campagne ${nouvelle} ?\n\nToutes les maisons repartent « à passer » ; les dons de ${nouvelle - 1} apparaîtront en historique. Rien n'est effacé : vous pourrez revenir à ${base.anneeCourante} avec ◀.`)) return;
   base.anneeCourante = nouvelle;
   if (delta > 0 && !dejaUtilisee) journaliser('campagne', `Début de la campagne ${nouvelle}`, null, nouvelle);
   enregistrer();

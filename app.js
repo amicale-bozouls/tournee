@@ -5,14 +5,14 @@
 
 'use strict';
 
-const APP_VERSION = '0.1.8';
+const APP_VERSION = '0.1.9';
 const CLE_STOCKAGE = 'tournee_terrain_v2';
 const CLE_BENEVOLE = 'tournee_terrain_benevole';
 const FORMAT_TOURNEE = 'tournee-bozouls';
 const FORMAT_RETOUR = 'retour-tournee-bozouls';
 
 const STATUTS = {
-  a_visiter:     { libelle: 'À visiter',  court: '—' },
+  a_visiter:     { libelle: 'À passer',   court: '—' },
   don:           { libelle: 'Don',        court: 'Don' },
   absent:        { libelle: 'Absent',     court: 'Absent' },
   repasser:      { libelle: 'À repasser', court: 'Repasser' },
