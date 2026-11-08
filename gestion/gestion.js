@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = '0.8.0';
+const APP_VERSION = '0.9.0';
 const FORMAT_BASE = 'base-tournees-bozouls';
 const FORMAT_TOURNEE = 'tournee-bozouls';
 const FORMAT_RETOUR = 'retour-tournee-bozouls';
@@ -51,7 +51,9 @@ let gpsDialogue = null;       // { lat, lng, score, label } trouvé dans la fich
 let retourEnCours = null;     // { retour, lignes }
 let carte = null, coucheCarte = null;
 const marqueursMaison = new Map();   // id de maison -> marqueur de la carte
-let placement = null;                // placement à la main en cours : { id, repere, auClic }
+let placement = null;                // placement à la main en cours : { ids, groupe, repere, auClic }
+const LIBELLE_GROUPE = 'Groupe placé à la main';
+const LIBELLE_MAISON = 'Placée à la main';
 const URL_VUE_AERIENNE = 'https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&FORMAT=image/jpeg&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}';
 
 const FS_DISPONIBLE = 'showOpenFilePicker' in window;
@@ -843,6 +845,7 @@ function appliquerRues() {
 let gpsPortee = null;      // id de tournée, ou null pour toutes
 let gpsEnCours = false;
 let gpsArret = false;
+let gpsManuels = [];       // placements à la main listés dans la fenêtre
 
 function maisonsGps() {
   return (gpsPortee ? maisonsDe(gpsPortee) : base.maisons).filter(m => m.etat !== 'disparue');
@@ -866,6 +869,40 @@ function rendreGps() {
     <td><input data-rue="proposee" value="${esc(r.proposee)}" /></td>
     <td class="num">${r.nb}</td></tr>`).join('');
   rendreResultatsGps();
+  rendreManuels();
+}
+
+// Placements à la main, regroupés par point, pour pouvoir les annuler
+function rendreManuels() {
+  const groupes = new Map();
+  for (const m of maisonsGps()) {
+    if (m.lat == null || ![LIBELLE_GROUPE, LIBELLE_MAISON].includes(m.geoLabel)) continue;
+    const k = `${m.geoLabel}|${m.lat.toFixed(5)},${m.lng.toFixed(5)}`;
+    if (!groupes.has(k)) groupes.set(k, []);
+    groupes.get(k).push(m);
+  }
+  gpsManuels = [...groupes.values()].sort((a, b) => b.length - a.length);
+  $('gps-manuel-bloc').hidden = gpsManuels.length === 0;
+  $('gps-manuel-corps').innerHTML = gpsManuels.map((g, i) => {
+    const m = g[0], t = tournee(m.tourneeId);
+    return `<tr><td>${esc(m.geoLabel === LIBELLE_GROUPE ? (m.lieu || 'Groupe') : adresse(m))}</td><td class="discret">${esc(t ? t.nom : '')}</td>
+      <td class="num">${g.length}</td><td class="discret">${g.every(x => x.posAvant) ? 'Position précédente' : 'Recherche BAN à relancer'}</td>
+      <td><button type="button" class="btn" data-action="annuler-manuel" data-i="${i}">↩ Annuler</button></td></tr>`;
+  }).join('');
+}
+
+function annulerManuel(i) {
+  const g = gpsManuels[i];
+  if (!confirm(`Annuler le placement de ${g.length} maison(s) ?`)) return;
+  for (const m of g) {
+    Object.assign(m, m.posAvant || { lat: null, lng: null, posApprochee: false, geoNiveau: '', geoLabel: '', geoScore: null });
+    delete m.posAvant;
+  }
+  journaliser('geocodage', `Placement annulé : ${g.length} maison(s)`, g[0].tourneeId);
+  enregistrer();
+  rendreGps();
+  rendreTout();
+  toast(g.some(m => m.lat == null) ? '↩ Annulé : relancez « Chercher les positions »' : '↩ Placement annulé');
 }
 
 function rendreResultatsGps() {
@@ -1094,9 +1131,14 @@ function validerPlacement() {
   const { ids, groupe } = placement;
   // Un groupe reste « approché » : chaque maison pourra ensuite être ajustée
   const position = groupe
-    ? { lat, lng, posApprochee: true, geoNiveau: 'lieu', geoLabel: 'Groupe placé à la main', geoScore: null }
-    : { lat, lng, posApprochee: false, geoNiveau: 'manuel', geoLabel: 'Placée à la main', geoScore: null };
-  ids.forEach(id => Object.assign(maison(id), position));
+    ? { lat, lng, posApprochee: true, geoNiveau: 'lieu', geoLabel: LIBELLE_GROUPE, geoScore: null }
+    : { lat, lng, posApprochee: false, geoNiveau: 'manuel', geoLabel: LIBELLE_MAISON, geoScore: null };
+  for (const id of ids) {
+    const m = maison(id);
+    // On garde la position précédente pour pouvoir annuler (voir « Rues et positions GPS »)
+    m.posAvant = { lat: m.lat ?? null, lng: m.lng ?? null, posApprochee: !!m.posApprochee, geoNiveau: m.geoNiveau || '', geoLabel: m.geoLabel || '', geoScore: m.geoScore ?? null };
+    Object.assign(m, position);
+  }
   terminerPlacement();
   enregistrer();
   rendreCarte(false);
@@ -1836,6 +1878,7 @@ async function action(nom, cible) {
     case 'geocoder-tournee': ouvrirGps(tourneeActiveId); break;
     case 'ouvrir-gps': document.querySelectorAll('dialog[open]').forEach(d => d.close()); ouvrirGps(null); break;
     case 'appliquer-rues': appliquerRues(); break;
+    case 'annuler-manuel': annulerManuel(Number(cible.dataset.i)); break;
     case 'lancer-gps': lancerGps(); break;
     case 'arreter-gps': gpsArret = true; break;
     case 'exporter-terrain': exporterTerrain(); break;
